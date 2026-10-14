@@ -1,4 +1,4 @@
-name: Deploy Backend to Google Cloud Run
+name: CI/CD Pipeline - Hotel Backend
 
 on:
   push:
@@ -13,29 +13,70 @@ env:
   REGION: us-central1
 
 jobs:
-  deploy:
+  # =======================================================
+  # 1. ETAPA DE CI: Compilación y Pruebas
+  # =======================================================
+  ci:
+    name: CI - Compilación y Tests
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout código
-      uses: actions/checkout@v3
+      - name: Checkout del código
+        uses: actions/checkout@v3
 
-    - name: Autenticación en Google Cloud
-      uses: google-github-actions/auth@v1
-      with:
-        credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+      - name: Configurar Java 21 (Temurin)
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
 
-    - name: Configurar Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
+      - name: Dar permisos de ejecución a Maven Wrapper
+        run: chmod +x ./mvnw
 
-    - name: Construir y Subir Imagen Docker (Google Container Registry)
-      run: |
-        gcloud builds submit --tag gcr.io/$PROJECT_ID/$SERVICE_NAME
-        
-    - name: Desplegar en Cloud Run
-      uses: google-github-actions/deploy-cloudrun@v1
-      with:
-        service: ${{ env.SERVICE_NAME }}
-        image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}
-        region: ${{ env.REGION }}
-        flags: '--allow-unauthenticated --port=8080'
+      - name: Ejecutar Pruebas Automatizadas
+        run: ./mvnw clean test
+
+  # =======================================================
+  # 2. ETAPA DE CD: Construcción y Despliegue en Cloud Run
+  # =======================================================
+  cd:
+    name: CD - Despliegue a Cloud Run
+    needs: [ci] # Solo despliega si la etapa de CI pasó exitosamente
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v3
+
+      - name: Autenticación en Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: Configurar Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: Construir y Subir Imagen Docker (Google Cloud Build)
+        run: |
+          gcloud builds submit --tag gcr.io/$PROJECT_ID/$SERVICE_NAME
+
+      - name: Desplegar en Cloud Run con Variables de Entorno
+        uses: google-github-actions/deploy-cloudrun@v1
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          flags: '--allow-unauthenticated --port=8080'
+          env_vars: |
+            DB_URL=${{ secrets.DB_URL }}
+            DB_USERNAME=${{ secrets.DB_USERNAME }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_EXPIRATION=${{ secrets.JWT_EXPIRATION }}
+            CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+            PAYMENT_WEBHOOK_SECRET=${{ secrets.PAYMENT_WEBHOOK_SECRET }}
+            MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}
+            MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}
+            ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
+            ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}

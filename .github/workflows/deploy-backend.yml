@@ -82,5 +82,4 @@ jobs:
             PAYMENT_WEBHOOK_SECRET=${{ secrets.PAYMENT_WEBHOOK_SECRET }}
             MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}
             MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}
-            ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
-            ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
+

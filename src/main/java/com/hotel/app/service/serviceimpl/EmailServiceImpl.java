@@ -3,9 +3,7 @@ package com.hotel.app.service.serviceimpl;
 import com.hotel.app.service.EmailService;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -20,7 +18,6 @@ import java.nio.charset.StandardCharsets;
 public class EmailServiceImpl implements EmailService {
 
     private final JavaMailSender mailSender;
-    private final TaskExecutor taskExecutor;
 
     @Value("${spring.mail.username:}")
     private String fromEmail;
@@ -28,11 +25,8 @@ public class EmailServiceImpl implements EmailService {
     @Value("${spring.mail.password:}")
     private String mailPassword;
 
-    public EmailServiceImpl(
-            JavaMailSender mailSender,
-            @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor) {
+    public EmailServiceImpl(JavaMailSender mailSender) {
         this.mailSender = mailSender;
-        this.taskExecutor = taskExecutor;
     }
 
     @Override
@@ -50,11 +44,19 @@ public class EmailServiceImpl implements EmailService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    taskExecutor.execute(task);
+                    try {
+                        task.run();
+                    } catch (Exception e) {
+                        log.error("Fallo al enviar correo tras commit: {}", e.getMessage(), e);
+                    }
                 }
             });
         } else {
-            taskExecutor.execute(task);
+            try {
+                task.run();
+            } catch (Exception e) {
+                log.error("Fallo al enviar correo síncrono: {}", e.getMessage(), e);
+            }
         }
     }
 
@@ -71,10 +73,9 @@ public class EmailServiceImpl implements EmailService {
             message.setText(text);
 
             mailSender.send(message);
-            log.info("Notificación por correo simple despachada exitosamente.");
+            log.info("Notificación por correo simple despachada exitosamente a {}.", to);
         } catch (Exception e) {
-            String rootCause = e.getCause() != null ? e.getCause().getClass().getSimpleName() : "none";
-            log.error("Fallo al enviar correo simple. Tipo: {}, Causa raíz: {}", e.getClass().getSimpleName(), rootCause);
+            log.error("Fallo al enviar correo simple a {}. Error: {}", to, e.getMessage(), e);
         }
     }
 
@@ -92,10 +93,9 @@ public class EmailServiceImpl implements EmailService {
             helper.setText(htmlContent, true);
 
             mailSender.send(mimeMessage);
-            log.info("Notificación por correo HTML despachada exitosamente.");
+            log.info("Notificación por correo HTML despachada exitosamente a {}.", to);
         } catch (Exception e) {
-            String rootCause = e.getCause() != null ? e.getCause().getClass().getSimpleName() : "none";
-            log.error("Fallo al enviar correo HTML. Tipo: {}, Causa raíz: {}", e.getClass().getSimpleName(), rootCause);
+            log.error("Fallo al enviar correo HTML a {}. Error: {}", to, e.getMessage(), e);
         }
     }
 

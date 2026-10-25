@@ -37,3 +37,6 @@ build/
 .env.*
 uploads/
 
+
+# Plantilla sin valores (si se versiona)
+!.env.example

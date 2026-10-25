@@ -26,6 +26,22 @@ public class UserController {
         return ResponseEntity.ok(userService.getAllUsers());
     }
 
+    @GetMapping("/clients")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<UserResponse>> getClientAccounts() {
+        return ResponseEntity.ok(userService.getClientAccounts());
+    }
+
+    // Habilitar / deshabilitar una cuenta (personal o cliente). Deshabilitar cierra sus sesiones al instante.
+    @PatchMapping("/{id}/status")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<UserResponse> setStatus(@PathVariable Long id,
+                                                  @Valid @RequestBody com.hotel.app.dto.request.UserStatusRequest request,
+                                                  Authentication authentication) {
+        return ResponseEntity.ok(userService.setActive(id, request.getActive(),
+                authentication != null ? authentication.getName() : null));
+    }
+
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponse> createUser(@Valid @RequestBody UserRequest request) {
@@ -36,6 +52,14 @@ public class UserController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponse> updateUser(@PathVariable Long id, @Valid @RequestBody UserRequest request) {
         return ResponseEntity.ok(userService.updateUser(id, request));
+    }
+
+    @PatchMapping("/{id}/password")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> resetPassword(@PathVariable Long id,
+                                              @Valid @RequestBody com.hotel.app.dto.request.AdminPasswordResetRequest request) {
+        userService.resetPassword(id, request.getNewPassword());
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{id}")

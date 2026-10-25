@@ -63,6 +63,10 @@ public class Reservation {
     @Builder.Default
     private String originChannel = "RECEPTION";
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Integer guests = 1;
+
     @Column(name = "modification_count", nullable = false)
     @Builder.Default
     private Integer modificationCount = 0;

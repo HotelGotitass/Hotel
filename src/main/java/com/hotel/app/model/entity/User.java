@@ -36,6 +36,16 @@ public class User {
     @Builder.Default
     private Boolean isVerified = true;
 
+    // false = deshabilitada por el administrador: no puede iniciar sesion ni usar tokens vigentes
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean active = true;
+
+    // Se incrementa al deshabilitar o restablecer contrasena: invalida todos los tokens emitidos antes
+    @Column(name = "token_version", nullable = false)
+    @Builder.Default
+    private Integer tokenVersion = 0;
+
     @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

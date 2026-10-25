@@ -1,18 +1,23 @@
 package com.hotel.app.controller;
 
 import com.hotel.app.dto.request.ClientReservationRequest;
+import com.hotel.app.dto.request.PaymentPreferenceRequest;
+import com.hotel.app.dto.response.PaymentPreferenceResponse;
 import com.hotel.app.dto.response.ReservationResponse;
+import com.hotel.app.service.InvoiceService;
+import com.hotel.app.service.PaymentService;
 import com.hotel.app.service.ReservationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.hotel.app.security.UserDetailsImpl;
 import org.springframework.web.bind.annotation.*;
 import com.hotel.app.dto.request.DateModificationRequest;
-import jakarta.validation.Valid;
 
 import java.util.List;
 
@@ -22,6 +27,8 @@ import java.util.List;
 public class ClientReservationController {
 
     private final ReservationService reservationService;
+    private final PaymentService paymentService;
+    private final InvoiceService invoiceService;
 
     @PostMapping
     @PreAuthorize("hasRole('CLIENT')")
@@ -55,5 +62,26 @@ public class ClientReservationController {
             @Valid @RequestBody DateModificationRequest request,
             @AuthenticationPrincipal UserDetailsImpl userDetails) {
         return ResponseEntity.ok(reservationService.modifyReservationDates(id, userDetails.getUsername(), request.getNewCheckIn(), request.getNewCheckOut()));
+    }
+
+    @PostMapping("/{id}/payment-preference")
+    @PreAuthorize("hasRole('CLIENT')")
+    public ResponseEntity<PaymentPreferenceResponse> createPaymentPreference(
+            @PathVariable Long id,
+            @Valid @RequestBody PaymentPreferenceRequest request,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        return ResponseEntity.ok(paymentService.createPreference(id, userDetails.getUsername(), request.getOption()));
+    }
+
+    @GetMapping("/{id}/invoice/pdf")
+    @PreAuthorize("hasRole('CLIENT')")
+    public ResponseEntity<byte[]> downloadMyInvoice(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        byte[] pdfBytes = invoiceService.generatePdfForClient(id, userDetails.getUsername());
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDispositionFormData("attachment", "factura_reserva_" + id + ".pdf");
+        return new ResponseEntity<>(pdfBytes, headers, HttpStatus.OK);
     }
 }

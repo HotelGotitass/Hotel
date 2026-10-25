@@ -25,6 +25,7 @@ public class JwtUtil {
 
         return Jwts.builder()
                 .subject((userPrincipal.getUsername()))
+                .claim("ver", userPrincipal.getTokenVersion())
                 .issuedAt(new Date())
                 .expiration(new Date((new Date()).getTime() + jwtExpirationMs))
                 .signWith(key())
@@ -38,6 +39,13 @@ public class JwtUtil {
     public String getUserNameFromJwtToken(String token) {
         return Jwts.parser().verifyWith(key()).build()
                 .parseSignedClaims(token).getPayload().getSubject();
+    }
+
+    /** Version de sesion del token; los emitidos antes de existir el claim cuentan como 0. */
+    public int getTokenVersionFromJwtToken(String token) {
+        Integer ver = Jwts.parser().verifyWith(key()).build()
+                .parseSignedClaims(token).getPayload().get("ver", Integer.class);
+        return ver == null ? 0 : ver;
     }
 
     public boolean validateJwtToken(String authToken) {

@@ -1,6 +1,9 @@
 package com.hotel.app.controller;
 
+import com.hotel.app.dto.request.InvoiceRequest;
+import com.hotel.app.dto.request.InvoiceVoidRequest;
 import com.hotel.app.dto.response.InvoiceResponse;
+import jakarta.validation.Valid;
 import com.hotel.app.service.InvoiceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -21,8 +24,9 @@ public class InvoiceController {
 
     @PostMapping("/reservation/{reservationId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'RECEPCIONISTA')")
-    public ResponseEntity<InvoiceResponse> generateInvoice(@PathVariable Long reservationId) {
-        return ResponseEntity.ok(invoiceService.generateInvoice(reservationId));
+    public ResponseEntity<InvoiceResponse> generateInvoice(@PathVariable Long reservationId,
+                                                           @Valid @RequestBody(required = false) InvoiceRequest request) {
+        return ResponseEntity.ok(invoiceService.generateInvoice(reservationId, request));
     }
 
     @GetMapping("/reservation/{reservationId}")
@@ -37,17 +41,25 @@ public class InvoiceController {
         return ResponseEntity.ok(invoiceService.getAllInvoices());
     }
 
-    @PatchMapping("/{id}/pay")
+    // Anulacion con nota de credito (simulada)
+    @PatchMapping("/{id}/void")
     @PreAuthorize("hasAnyRole('ADMIN', 'RECEPCIONISTA')")
-    public ResponseEntity<InvoiceResponse> payInvoice(@PathVariable Long id) {
-        return ResponseEntity.ok(invoiceService.payInvoice(id));
+    public ResponseEntity<InvoiceResponse> voidInvoice(@PathVariable Long id, @Valid @RequestBody InvoiceVoidRequest request) {
+        return ResponseEntity.ok(invoiceService.voidInvoice(id, request.getReason()));
     }
 
-        @GetMapping("/{id}/pdf")
-    @PreAuthorize("hasAnyRole('ADMIN', 'RECEPCIONISTA', 'CLIENT')")
-    public ResponseEntity<byte[]> getInvoicePdf(@PathVariable Long id, @org.springframework.security.core.annotation.AuthenticationPrincipal com.hotel.app.security.UserDetailsImpl userDetails) {
-        // En un caso real validariamos que la factura le pertenece al CLIENT.
-        // Omitido por simplicidad a menos que el cliente intente acceder IDs al azar.
+    @PatchMapping("/{id}/pay")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RECEPCIONISTA')")
+    public ResponseEntity<InvoiceResponse> payInvoice(@PathVariable Long id,
+                                                      @RequestParam(defaultValue = "CASH") com.hotel.app.model.enums.PaymentMethod method,
+                                                      org.springframework.security.core.Authentication auth) {
+        return ResponseEntity.ok(invoiceService.payInvoice(id, method, auth.getName()));
+    }
+
+    @GetMapping("/{id}/pdf")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RECEPCIONISTA')")
+    public ResponseEntity<byte[]> getInvoicePdf(@PathVariable Long id) {
+        // Los clientes descargan su factura por /client/reservations/{id}/invoice/pdf (valida propiedad)
         byte[] pdfBytes = invoiceService.generatePdf(id);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_PDF);

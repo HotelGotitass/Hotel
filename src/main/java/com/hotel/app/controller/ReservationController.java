@@ -21,6 +21,7 @@ import java.util.List;
 public class ReservationController {
 
     private final ReservationService reservationService;
+    private final com.hotel.app.service.CashService cashService;
 
     // Public Endpoint
     @GetMapping("/rooms/search")
@@ -59,6 +60,23 @@ public class ReservationController {
     @PreAuthorize("hasAnyRole('ADMIN', 'RECEPCIONISTA')")
     public ResponseEntity<ReservationResponse> cancelReservation(@PathVariable Long id, @RequestParam(defaultValue="HOTEL_CANCELLATION") RefundReason reason) {
         return ResponseEntity.ok(reservationService.cancelReservationByAdmin(id, reason));
+    }
+
+    // Cobro en recepcion (requiere caja abierta)
+    @PostMapping("/reservations/{id}/payments")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RECEPCIONISTA')")
+    public ResponseEntity<com.hotel.app.dto.response.PaymentResponse> registerPayment(
+            @PathVariable Long id,
+            @Valid @RequestBody com.hotel.app.dto.request.ReceptionPaymentRequest request,
+            org.springframework.security.core.Authentication auth) {
+        return ResponseEntity.ok(cashService.registerReservationPayment(id, request.getAmount(), request.getMethod(),
+                request.getReference(), auth.getName()));
+    }
+
+    @GetMapping("/reservations/{id}/payments")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RECEPCIONISTA')")
+    public ResponseEntity<List<com.hotel.app.dto.response.PaymentResponse>> getPayments(@PathVariable Long id) {
+        return ResponseEntity.ok(cashService.getReservationPayments(id));
     }
 
     @GetMapping("/reservations/code/{bookingCode}")

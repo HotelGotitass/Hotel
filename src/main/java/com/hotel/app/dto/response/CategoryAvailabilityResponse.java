@@ -14,4 +14,5 @@ public class CategoryAvailabilityResponse {
     private Integer maxCapacity;
     private String imageUrl;
     private long availableRooms;
+    private java.util.List<AmenityResponse> amenities;
 }

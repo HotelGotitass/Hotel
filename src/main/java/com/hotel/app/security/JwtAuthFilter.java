@@ -31,6 +31,21 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 String username = jwtUtil.getUserNameFromJwtToken(jwt);
 
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+
+                // Se verifica en CADA peticion: deshabilitar la cuenta o forzar cierre surte efecto de inmediato
+                if (!userDetails.isAccountNonLocked()) {
+                    reject(response, request, "ACCOUNT_DISABLED",
+                            "Tu cuenta fue deshabilitada por el administrador. Contacta con el hotel.");
+                    return;
+                }
+                // Comparacion exacta de version (no depende de la hora de emision, que el JWT guarda en segundos)
+                if (userDetails instanceof UserDetailsImpl impl
+                        && jwtUtil.getTokenVersionFromJwtToken(jwt) != impl.getTokenVersion()) {
+                    reject(response, request, "SESSION_REVOKED",
+                            "Tu sesión fue cerrada por el administrador. Inicia sesión nuevamente.");
+                    return;
+                }
+
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userDetails, null, userDetails.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
@@ -42,6 +57,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private void reject(HttpServletResponse response, HttpServletRequest request, String code, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json;charset=UTF-8");
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("status", 401);
+        body.put("error", code);
+        body.put("message", message);
+        body.put("path", request.getRequestURI());
+        mapper.writeValue(response.getOutputStream(), body);
     }
 
     private String parseJwt(HttpServletRequest request) {

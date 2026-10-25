@@ -32,7 +32,7 @@ public class PaymentAttempt {
     @Column(nullable = false)
     private BigDecimal amount;
 
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false, length = 30)
     private String status;
 
     @Column(name = "payment_method", nullable = false, length = 20)
@@ -40,6 +40,9 @@ public class PaymentAttempt {
 
     @Column(name = "external_reference", length = 100)
     private String externalReference;
+
+    @Column(name = "preference_id", length = 100)
+    private String preferenceId;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)

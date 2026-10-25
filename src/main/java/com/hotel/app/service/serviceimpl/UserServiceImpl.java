@@ -14,6 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -31,6 +32,39 @@ public class UserServiceImpl implements UserService {
                 .filter(user -> user.getRole() != Role.CLIENT)
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserResponse> getClientAccounts() {
+        return userRepository.findAll().stream()
+                .filter(user -> user.getRole() == Role.CLIENT)
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public UserResponse setActive(Long id, boolean active, String currentUsername) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
+        if (!active) {
+            if (currentUsername != null && user.getEmail().equalsIgnoreCase(currentUsername)) {
+                throw new BusinessException("No puedes deshabilitar tu propia cuenta");
+            }
+            if (user.getRole() == Role.ADMIN) {
+                long activeAdmins = userRepository.findAll().stream()
+                        .filter(u -> u.getRole() == Role.ADMIN && !Boolean.FALSE.equals(u.getActive()))
+                        .count();
+                if (activeAdmins <= 1) {
+                    throw new BusinessException("No puedes deshabilitar al último administrador activo");
+                }
+            }
+            // Cierra todas sus sesiones: los tokens ya emitidos dejan de valer aunque luego se reactive
+            user.setTokenVersion((user.getTokenVersion() == null ? 0 : user.getTokenVersion()) + 1);
+        }
+        user.setActive(active);
+        return mapToResponse(userRepository.save(user));
     }
 
     @Override
@@ -91,11 +125,50 @@ public class UserServiceImpl implements UserService {
         userRepository.delete(user);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public UserResponse getByEmail(String email) {
+        return mapToResponse(userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado")));
+    }
+
+    @Override
+    @Transactional
+    public void changeOwnPassword(String email, String currentPassword, String newPassword) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new BusinessException("La contraseña actual es incorrecta");
+        }
+        if (passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw new BusinessException("La nueva contraseña debe ser distinta a la actual");
+        }
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(Long id, String newPassword) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
+        // Los clientes recuperan su contrasena por correo; el admin solo gestiona al personal
+        if (user.getRole() == Role.CLIENT) {
+            throw new BusinessException("Solo se puede cambiar la contraseña del personal del hotel");
+        }
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setTokenVersion((user.getTokenVersion() == null ? 0 : user.getTokenVersion()) + 1);
+        userRepository.save(user);
+    }
+
     private UserResponse mapToResponse(User user) {
         return UserResponse.builder()
                 .id(user.getId())
                 .email(user.getEmail())
                 .role(user.getRole().name())
+                .createdAt(user.getCreatedAt())
+                .active(!Boolean.FALSE.equals(user.getActive()))
+                .verified(!Boolean.FALSE.equals(user.getIsVerified()))
                 .build();
     }
 }

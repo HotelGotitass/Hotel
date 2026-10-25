@@ -47,6 +47,13 @@ public class Refund {
     @Column(name = "processed_at")
     private LocalDateTime processedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_method", length = 20)
+    private com.hotel.app.model.enums.PaymentMethod refundMethod;
+
+    @Column(name = "refund_reference", length = 100)
+    private String refundReference;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

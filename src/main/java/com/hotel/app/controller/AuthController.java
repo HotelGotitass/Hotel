@@ -24,6 +24,12 @@ public class AuthController {
         return ResponseEntity.ok(authService.login(request));
     }
 
+    // Latido de sesion: el frontend lo consulta periodicamente; 401 si la cuenta fue deshabilitada
+    @GetMapping("/session")
+    public ResponseEntity<Void> session() {
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/register")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponse> register(@Valid @RequestBody UserRegisterRequest request) {

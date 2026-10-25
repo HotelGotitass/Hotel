@@ -1,6 +1,7 @@
 package com.hotel.app.service;
 
 import com.hotel.app.model.entity.Reservation;
+import com.hotel.app.model.enums.CancelledBy;
 import com.hotel.app.model.enums.ReservationStatus;
 import com.hotel.app.repository.ReservationRepository;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,8 @@ public class ReservationExpirationTask {
             log.info("Encontradas {} reservas PENDING expiradas.", expiredReservations.size());
             for (Reservation res : expiredReservations) {
                 res.setStatus(ReservationStatus.CANCELLED);
+                res.setCancelledBy(CancelledBy.SYSTEM);
+                res.setCancellationReason("No se recibio el pago dentro del plazo");
                 res.setNotes((res.getNotes() != null ? res.getNotes() + "\n" : "") + "Cancelada automaticamente por falta de pago (expirada).");
                 log.info("Reserva {} cancelada por expiracion.", res.getBookingCode());
             }

@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 public class InvoiceResponse {
     private Long id;
     private Long reservationId;
+    private String bookingCode;
     private String guestName;
     private String documentNumber;
     private BigDecimal subtotal;
@@ -17,4 +18,18 @@ public class InvoiceResponse {
     private BigDecimal totalAmount;
     private String status;
     private LocalDateTime issueDate;
+
+    // Comprobante electronico (simulado)
+    private String documentType;
+    private String number;
+    private String customerDocType;
+    private String customerDocNumber;
+    private String customerName;
+    private String customerAddress;
+    private String sunatStatus;
+    private String sunatMessage;
+    private String sunatHash;
+    private String voidReason;
+    private LocalDateTime voidedAt;
+    private String creditNoteNumber;
 }

@@ -14,7 +14,9 @@ import com.hotel.app.repository.RoomCategoryRepository;
 import com.hotel.app.repository.RoomRepository;
 import com.hotel.app.service.ReservationService;
 import lombok.RequiredArgsConstructor;
+import com.hotel.app.service.PaymentService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +39,10 @@ public class ReservationServiceImpl implements ReservationService {
     private final com.hotel.app.repository.UserRepository userRepository;
     private final com.hotel.app.repository.PaymentRepository paymentRepository;
     private final com.hotel.app.repository.RefundRepository refundRepository;
+    private final PaymentService paymentService;
+
+    @Value("${booking.payment-window-minutes:15}")
+    private long paymentWindowMinutes;
 
     private static final List<ReservationStatus> ACTIVE_STATUSES = Arrays.asList(
             ReservationStatus.PENDING, ReservationStatus.CONFIRMED, ReservationStatus.CHECKED_IN
@@ -61,6 +67,10 @@ public class ReservationServiceImpl implements ReservationService {
                     .basePrice(category.getBasePrice())
                     .maxCapacity(category.getMaxCapacity())
                     .imageUrl(category.getImageUrl())
+                    .amenities(category.getAmenities().stream()
+                            .sorted(java.util.Comparator.comparing(Amenity::getName))
+                            .map(a -> new com.hotel.app.dto.response.AmenityResponse(a.getId(), a.getName(), a.getIcon()))
+                            .toList())
                     .availableRooms(Math.max(0, available))
                     .build();
         }).collect(Collectors.toList());
@@ -86,6 +96,7 @@ public class ReservationServiceImpl implements ReservationService {
             if (available <= 0) {
                 throw new ConflictException("No hay habitaciones disponibles para la categoria y fechas seleccionadas.");
             }
+            int guests = validateGuests(request.getGuests(), category);
 
             long days = ChronoUnit.DAYS.between(request.getCheckInDate(), request.getCheckOutDate());
             BigDecimal totalPrice = BigDecimal.valueOf(category.getBasePrice()).multiply(BigDecimal.valueOf(days));
@@ -98,6 +109,9 @@ public class ReservationServiceImpl implements ReservationService {
                     .status(ReservationStatus.CONFIRMED)
                     .totalPrice(totalPrice)
                     .notes(request.getNotes())
+                    .bookingCode(generateBookingCode())
+                    .originChannel("RECEPTION")
+                    .guests(guests)
                     .build();
 
             reservation = reservationRepository.save(reservation);
@@ -150,6 +164,9 @@ public class ReservationServiceImpl implements ReservationService {
         if (!reservation.getUser().getEmail().equals(clientEmail)) {
             throw new BusinessException("No tiene permiso para cancelar esta reserva");
         }
+        if (reservation.getStatus() == ReservationStatus.CANCELLED) {
+            throw new BusinessException("La reserva ya esta cancelada");
+        }
         if (reservation.getStatus() == ReservationStatus.CHECKED_IN || reservation.getStatus() == ReservationStatus.CHECKED_OUT) {
             throw new BusinessException("No se puede cancelar una reserva despues del check-in. Acerquese a recepcion.");
         }
@@ -157,6 +174,18 @@ public class ReservationServiceImpl implements ReservationService {
         reservation.setStatus(ReservationStatus.CANCELLED);
         reservation.setCancelledBy(CancelledBy.CLIENT);
         reservation.setCancellationReason("Cancelado por el cliente desde el portal web");
+        reservation.setExpiresAt(null);
+
+        // El reembolso queda SOLICITADO; recepcion decide segun la politica de cancelacion
+        BigDecimal totalPaid = paymentService.getAmountPaid(reservation.getId());
+        if (totalPaid.compareTo(BigDecimal.ZERO) > 0) {
+            refundRepository.save(Refund.builder()
+                    .reservation(reservation)
+                    .amount(totalPaid)
+                    .reason(RefundReason.CLIENT_CANCELLATION)
+                    .status(RefundStatus.REQUESTED)
+                    .build());
+        }
         return mapToResponse(reservationRepository.save(reservation));
     }
 
@@ -285,9 +314,29 @@ public class ReservationServiceImpl implements ReservationService {
         }
     }
 
+    private int validateGuests(Integer requested, RoomCategory category) {
+        int guests = requested == null ? 1 : requested;
+        if (guests > category.getMaxCapacity()) {
+            throw new BusinessException("La categoria " + category.getName() + " admite maximo " + category.getMaxCapacity() + " huespedes");
+        }
+        return guests;
+    }
+
+    private String generateBookingCode() {
+        String code;
+        do {
+            code = "GT-" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+        } while (reservationRepository.findByBookingCode(code).isPresent());
+        return code;
+    }
+
     private ReservationResponse mapToResponse(Reservation res) {
+        BigDecimal amountPaid = paymentService.getAmountPaid(res.getId());
         return ReservationResponse.builder()
                 .id(res.getId())
+                .bookingCode(res.getBookingCode())
+                .originChannel(res.getOriginChannel())
+                .guests(res.getGuests())
                 .guestId(res.getGuest().getId())
                 .guestName(res.getGuest().getFirstName() + " " + res.getGuest().getLastName())
                 .categoryId(res.getRoomCategory().getId())
@@ -303,6 +352,13 @@ public class ReservationServiceImpl implements ReservationService {
                 .cancelledBy(res.getCancelledBy() != null ? res.getCancelledBy().name() : null)
                 .cancellationReason(res.getCancellationReason())
                 .modificationCount(res.getModificationCount())
+                .expiresAt(res.getExpiresAt())
+                .paymentExpiresInSeconds(res.getStatus() == ReservationStatus.PENDING && res.getExpiresAt() != null
+                        ? Math.max(0, java.time.Duration.between(java.time.LocalDateTime.now(), res.getExpiresAt()).getSeconds())
+                        : null)
+                .amountPaid(amountPaid)
+                .depositAmount(paymentService.getDepositAmount(res))
+                .balanceDue(res.getTotalPrice().subtract(amountPaid).max(BigDecimal.ZERO))
                 .build();
     }
     @Override
@@ -310,8 +366,10 @@ public class ReservationServiceImpl implements ReservationService {
     public ReservationResponse createWebReservation(com.hotel.app.dto.request.ClientReservationRequest request, String clientEmail) {
         validateDates(request.getCheckInDate(), request.getCheckOutDate());
 
-        RoomCategory category = categoryRepository.findById(request.getCategoryId())
+        RoomCategory category = categoryRepository.findByIdForUpdate(request.getCategoryId())
                 .orElseThrow(() -> new ResourceNotFoundException("Categoria no encontrada"));
+
+        int guests = validateGuests(request.getGuests(), category);
 
         User user = userRepository.findByEmail(clientEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
@@ -332,10 +390,12 @@ public class ReservationServiceImpl implements ReservationService {
         }
 
         // Buscar habitacion disponible (la primera que encontremos que no se solape)
-        List<Room> roomsInCategory = roomRepository.findByEstadoAndCategory(RoomStatus.AVAILABLE, category.getId());
+        // El estado actual (OCCUPIED/CLEANING hoy) no dice nada de fechas futuras; solo se excluye mantenimiento
+        List<Room> roomsInCategory = roomRepository.findByEstadoAndCategory(null, category.getId());
         Room assignedRoom = null;
 
         for (Room room : roomsInCategory) {
+            if (room.getStatus() == RoomStatus.MAINTENANCE) continue;
             // Verificar solapamiento especifico para esta habitacion
             long overlaps = reservationRepository.countOverlappingRoomReservations(room.getId(), request.getCheckInDate(), request.getCheckOutDate(), ACTIVE_STATUSES);
             if (overlaps == 0) {
@@ -351,7 +411,7 @@ public class ReservationServiceImpl implements ReservationService {
         long nights = ChronoUnit.DAYS.between(request.getCheckInDate(), request.getCheckOutDate());
         BigDecimal totalPrice = BigDecimal.valueOf(category.getBasePrice()).multiply(BigDecimal.valueOf(nights));
 
-        String bookingCode = java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        String bookingCode = generateBookingCode();
 
         Reservation reservation = Reservation.builder()
                 .guest(guest)
@@ -364,8 +424,9 @@ public class ReservationServiceImpl implements ReservationService {
                 .totalPrice(totalPrice)
                 .bookingCode(bookingCode)
                 .originChannel("WEB")
+                .guests(guests)
                 .modificationCount(0)
-                .expiresAt(java.time.LocalDateTime.now().plusMinutes(15))
+                .expiresAt(java.time.LocalDateTime.now().plusMinutes(paymentWindowMinutes))
                 .build();
 
         reservation = reservationRepository.save(reservation);
@@ -384,6 +445,7 @@ public class ReservationServiceImpl implements ReservationService {
 
 
     @Override
+    @Transactional(readOnly = true)
     public ReservationResponse getReservationByCode(String bookingCode) {
         return mapToResponse(reservationRepository.findByBookingCode(bookingCode)
                 .orElseThrow(() -> new ResourceNotFoundException("Reserva no encontrada")));

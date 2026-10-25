@@ -18,6 +18,9 @@ public class UserDetailsImpl implements UserDetails {
     private String email;
     private String password;
     private Boolean isVerified;
+    private Boolean active;
+    @Getter
+    private Integer tokenVersion;
     private Collection<? extends GrantedAuthority> authorities;
 
     public static UserDetailsImpl build(User user) {
@@ -28,6 +31,8 @@ public class UserDetailsImpl implements UserDetails {
                 user.getEmail(),
                 user.getPassword(),
                 user.getIsVerified(),
+                !Boolean.FALSE.equals(user.getActive()),
+                user.getTokenVersion() == null ? 0 : user.getTokenVersion(),
                 authorities
         );
     }
@@ -54,7 +59,8 @@ public class UserDetailsImpl implements UserDetails {
 
     @Override
     public boolean isAccountNonLocked() {
-        return true;
+        // Cuenta deshabilitada por el administrador
+        return active;
     }
 
     @Override

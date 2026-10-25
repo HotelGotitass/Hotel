@@ -10,6 +10,9 @@ import java.time.LocalDateTime;
 @Builder
 public class ReservationResponse {
     private Long id;
+    private String bookingCode;
+    private String originChannel;
+    private Integer guests;
     private Long guestId;
     private String guestName;
     private Long categoryId;
@@ -25,6 +28,12 @@ public class ReservationResponse {
     private String cancelledBy;
     private String cancellationReason;
     private Integer modificationCount;
+    private LocalDateTime expiresAt;
+    // Segundos restantes para pagar; evita depender de la zona horaria del navegador vs. servidor
+    private Long paymentExpiresInSeconds;
+    private BigDecimal amountPaid;
+    private BigDecimal depositAmount;
+    private BigDecimal balanceDue;
 }
 
 

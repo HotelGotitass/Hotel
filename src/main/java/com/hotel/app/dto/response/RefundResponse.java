@@ -16,5 +16,7 @@ public class RefundResponse {
     private String status;
     private String processedBy;
     private LocalDateTime processedAt;
+    private String method;
+    private String reference;
     private LocalDateTime createdAt;
 }

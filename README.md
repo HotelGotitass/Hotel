@@ -5,7 +5,7 @@
 <p><b>Backend del sistema de gestión hotelera</b><br>
 reservas · pagos con Mercado Pago · caja de recepción · facturación simulada</p>
 
-<img src="https://img.shields.io/badge/Java-21-2E211B?style=flat-square&logo=openjdk&logoColor=white" alt="Java 21"> <img src="https://img.shields.io/badge/Spring_Boot-3.2-2E211B?style=flat-square&logo=springboot&logoColor=white" alt="Spring Boot 3.2"> <img src="https://img.shields.io/badge/PostgreSQL-Flyway-2E211B?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL Flyway"> <img src="https://img.shields.io/badge/Mercado_Pago-Checkout_Pro-ECA8D6?style=flat-square" alt="Mercado Pago Checkout Pro"> <img src="https://img.shields.io/badge/tests-Testcontainers-9C7A63?style=flat-square" alt="tests Testcontainers"> <img src="https://img.shields.io/badge/licencia-Apache_2.0-9C7A63?style=flat-square" alt="licencia Apache 2.0">
+<a href="https://github.com/HotelGotitass/Hotel/actions/workflows/deploy-backend.yml"><img src="https://github.com/HotelGotitass/Hotel/actions/workflows/deploy-backend.yml/badge.svg?branch=main" alt="CI/CD"></a> <img src="https://img.shields.io/badge/Java-21-2E211B?style=flat-square&logo=openjdk&logoColor=white" alt="Java 21"> <img src="https://img.shields.io/badge/Spring_Boot-3.2-2E211B?style=flat-square&logo=springboot&logoColor=white" alt="Spring Boot 3.2"> <img src="https://img.shields.io/badge/PostgreSQL-Flyway-2E211B?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL Flyway"> <img src="https://img.shields.io/badge/Mercado_Pago-Checkout_Pro-ECA8D6?style=flat-square" alt="Mercado Pago Checkout Pro"> <img src="https://img.shields.io/badge/tests-Testcontainers-9C7A63?style=flat-square" alt="tests Testcontainers"> <img src="https://img.shields.io/badge/licencia-Apache_2.0-9C7A63?style=flat-square" alt="licencia Apache 2.0">
 
 <p>
 <a href="#arquitectura">Arquitectura</a> ·
@@ -13,6 +13,7 @@ reservas · pagos con Mercado Pago · caja de recepción · facturación simulad
 <a href="#inicio-rápido">Inicio rápido</a> ·
 <a href="#configuración">Configuración</a> ·
 <a href="#api">API</a> ·
+<a href="#cicd">CI/CD</a> ·
 <a href="https://github.com/HotelGotitass/Hotel-frontend">Frontend ↗</a>
 </p>
 
@@ -519,20 +520,68 @@ Base `/api/v1` · 78 endpoints · autenticación `Authorization: Bearer <jwt>`.
 
 </details>
 
-## Despliegue
+<a id="cicd"></a>
+## CI/CD
+
+El repositorio incluye un pipeline de **GitHub Actions** ([`deploy-backend.yml`](.github/workflows/deploy-backend.yml))
+que corre en cada push a `main` (o a mano con *Run workflow*). Nada llega a producción sin pasar los tests.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"primaryColor":"#F7F1E8","primaryTextColor":"#2E211B","primaryBorderColor":"#2E211B","lineColor":"#9C7A63","secondaryColor":"#ECA8D6","tertiaryColor":"#FBF8F3","edgeLabelBackground":"#F7F1E8","noteBkgColor":"#ECA8D6","noteTextColor":"#2E211B","noteBorderColor":"#2E211B","actorBkg":"#2E211B","actorTextColor":"#F7F1E8","actorBorder":"#2E211B","actorLineColor":"#9C7A63","signalColor":"#9C7A63","signalTextColor":"#9C7A63","labelBoxBkgColor":"#ECA8D6","labelTextColor":"#2E211B","loopTextColor":"#9C7A63","attributeBackgroundColorOdd":"#FBF8F3","attributeBackgroundColorEven":"#F7F1E8"}}}%%
 flowchart LR
-    P(["push a main"]):::ext --> CI["GitHub Actions<br/>mvn test · Testcontainers"]
-    CI -->|"verde"| IMG["Imagen Docker"]
-    IMG --> CR["Cloud Run<br/>secrets de GitHub"]:::dark
-    CR --> FW["Flyway migra<br/>al arrancar"]:::accent
-    CI -->|"rojo"| STOP["No se despliega"]:::ext
+    P(["push a main"]):::ext --> CI
+    subgraph GA["GitHub Actions"]
+        CI["CI<br/>mvnw clean test<br/>Testcontainers"]:::accent
+        CI -->|"tests en verde"| B["CD<br/>docker build"]
+        B --> R["Container<br/>Registry"]
+    end
+    R --> CR["Cloud Run"]:::dark
+    S[("GitHub Secrets")]:::ext -.->|"variables de entorno"| CR
+    CR --> FW["Flyway migra<br/>y arranca"]:::accent
+    CI -->|"falla"| STOP["No se despliega"]:::ext
     classDef dark fill:#2E211B,stroke:#2E211B,color:#F7F1E8
     classDef accent fill:#ECA8D6,stroke:#2E211B,color:#2E211B
     classDef ext fill:#FBF8F3,stroke:#9C7A63,color:#2E211B,stroke-dasharray:4 3
 ```
+
+| Etapa | Job | Qué hace |
+|:--|:--|:--|
+| **CI** | `ci` | Java 21 (Temurin) con caché de Maven · `./mvnw clean test` con PostgreSQL efímera (Testcontainers) |
+| **CD** | `cd` · `needs: ci` | Autentica en Google Cloud · construye la imagen con el [`Dockerfile`](Dockerfile) multi-etapa · la publica en Container Registry · despliega en **Cloud Run** |
+| **Arranque** | — | Flyway aplica las migraciones pendientes antes de recibir tráfico |
+
+<details>
+<summary><b>Secrets requeridos</b> <sub>· Settings → Secrets and variables → Actions</sub></summary>
+
+Los valores viven **solo** en GitHub Secrets y se inyectan en Cloud Run como variables de entorno;
+nunca se escriben en el código ni en los logs.
+
+<!-- AUTO-GENERATED: secrets (solo nombres) (fuente: .github/workflows/deploy-backend.yml) - no editar a mano -->
+| Secret | Uso |
+|:--|:--|
+| `GCP_PROJECT_ID` | ID del proyecto de Google Cloud |
+| `GCP_CREDENTIALS` | JSON de la cuenta de servicio (Cloud Run + Container Registry) |
+| `DB_URL` | Variable del contenedor · JDBC de PostgreSQL |
+| `DB_USERNAME` | Variable del contenedor · Usuario de la base |
+| `DB_PASSWORD` | Variable del contenedor · Contraseña de la base |
+| `JWT_SECRET` | Variable del contenedor · Clave HMAC en Base64, mín. 32 bytes · `openssl rand -base64 48` |
+| `JWT_EXPIRATION` | Variable del contenedor · Vigencia del token (ms) |
+| `CORS_ALLOWED_ORIGINS` | Variable del contenedor · Orígenes del frontend, separados por coma |
+| `MP_ACCESS_TOKEN` | Variable del contenedor · Access token (`TEST-…` en sandbox); sin él no se crean pagos |
+| `MP_WEBHOOK_SECRET` | Variable del contenedor · Clave de webhooks; valida `x-signature` |
+| `FRONTEND_URL` | Variable del contenedor · URL pública del frontend (retorno del checkout) |
+| `BACKEND_URL` | Variable del contenedor · URL pública **https** del backend (destino del webhook) |
+| `MAIL_USERNAME` | Variable del contenedor · Cuenta SMTP (Gmail) |
+| `MAIL_PASSWORD` | Variable del contenedor · Contraseña de aplicación de Gmail |
+<!-- /AUTO-GENERATED -->
+
+</details>
+
+> [!IMPORTANT]
+> Si rotas una credencial (base de datos, correo, JWT, Mercado Pago), actualiza el secret: el siguiente
+> despliegue la aplica. Un secret vacío deja la variable vacía en el contenedor.
+>
+> `BILLING_RUC`, `BILLING_NAME`, `BILLING_ADDRESS` no se pasan en el workflow; el contenedor usa sus valores por defecto.
 
 ---
 

@@ -1,97 +1,122 @@
-# Hotel Gotitas · Backend
+<div align="center">
 
-API REST del sistema de gestión de **Hotel Gotitas** (una sola sede): reservas web y en recepción, pagos con
-Mercado Pago, caja de recepción, facturación electrónica simulada y panel administrativo.
+<h1>Hotel Gotitas · API</h1>
 
-> Frontend: [HotelGotitass/Hotel-frontend](https://github.com/HotelGotitass/Hotel-frontend)
+<p><b>Backend del sistema de gestión hotelera</b><br>
+reservas · pagos con Mercado Pago · caja de recepción · facturación simulada</p>
 
-## Contenido
+<img src="https://img.shields.io/badge/Java-21-2E211B?style=flat-square&logo=openjdk&logoColor=white" alt="Java 21"> <img src="https://img.shields.io/badge/Spring_Boot-3.2-2E211B?style=flat-square&logo=springboot&logoColor=white" alt="Spring Boot 3.2"> <img src="https://img.shields.io/badge/PostgreSQL-Flyway-2E211B?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL Flyway"> <img src="https://img.shields.io/badge/Mercado_Pago-Checkout_Pro-ECA8D6?style=flat-square" alt="Mercado Pago Checkout Pro"> <img src="https://img.shields.io/badge/tests-Testcontainers-9C7A63?style=flat-square" alt="tests Testcontainers"> <img src="https://img.shields.io/badge/licencia-Apache_2.0-9C7A63?style=flat-square" alt="licencia Apache 2.0">
 
-- [Stack](#stack) · [Arquitectura](#arquitectura) · [Funcionalidades](#funcionalidades) · [Flujos](#flujos)
-- [Modelo de datos](#modelo-de-datos) · [Variables de entorno](#variables-de-entorno) · [Ejecutar en local](#ejecutar-en-local)
-- [Tests](#tests) · [API](#api) · [Migraciones](#migraciones) · [Despliegue](#despliegue)
+<p>
+<a href="#arquitectura">Arquitectura</a> ·
+<a href="#flujos">Flujos</a> ·
+<a href="#inicio-rápido">Inicio rápido</a> ·
+<a href="#configuración">Configuración</a> ·
+<a href="#api">API</a> ·
+<a href="https://github.com/HotelGotitass/Hotel-frontend">Frontend ↗</a>
+</p>
 
-## Stack
+</div>
 
-- Java 21 · Spring Boot 3.2 (Web, Security, Data JPA, Validation, Mail)
-- PostgreSQL · Flyway · JWT (jjwt) · BCrypt
-- OpenPDF + ZXing (comprobantes PDF con QR) · Testcontainers (tests)
+---
+
+## En un vistazo
+
+<table>
+<tr>
+<td width="33%" valign="top"><b>Reservas</b><br><sub>Disponibilidad por fechas y huéspedes, reserva web con 15 min para pagar, recepción, check-in/out, consumos y cambio de fechas.</sub></td>
+<td width="33%" valign="top"><b>Mercado Pago</b><br><sub>Checkout Pro con anticipo (50 %), total o saldo. Webhook firmado e idempotente.</sub></td>
+<td width="33%" valign="top"><b>Caja</b><br><sub>Apertura con fondo, cobros por medio de pago, ingresos/egresos y cierre con arqueo. Una caja abierta a la vez.</sub></td>
+</tr>
+<tr>
+<td width="33%" valign="top"><b>Facturación simulada</b><br><sub>Boleta B001 / factura F001, RUC/DNI validados, IGV, importe en letras, QR y nota de crédito.</sub></td>
+<td width="33%" valign="top"><b>Cuentas</b><br><sub>Roles ADMIN, RECEPCIONISTA y CLIENT. Deshabilitar una cuenta cierra sus sesiones al instante.</sub></td>
+<td width="33%" valign="top"><b>Catálogo</b><br><sub>Categorías con comodidades, habitaciones, servicios extra, huéspedes, reclamaciones y dashboard.</sub></td>
+</tr>
+</table>
+
+> [!NOTE]
+> La facturación electrónica es **simulada**: genera comprobantes con el formato peruano (series, IGV, QR) pero
+> **no se conecta a SUNAT ni a ningún OSE/PSE**.
 
 ## Arquitectura
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#F7F1E8","primaryTextColor":"#2E211B","primaryBorderColor":"#2E211B","lineColor":"#9C7A63","secondaryColor":"#ECA8D6","tertiaryColor":"#FBF8F3","edgeLabelBackground":"#F7F1E8","noteBkgColor":"#ECA8D6","noteTextColor":"#2E211B","noteBorderColor":"#2E211B","actorBkg":"#2E211B","actorTextColor":"#F7F1E8","actorBorder":"#2E211B","actorLineColor":"#9C7A63","signalColor":"#9C7A63","signalTextColor":"#9C7A63","labelBoxBkgColor":"#ECA8D6","labelTextColor":"#2E211B","loopTextColor":"#9C7A63","attributeBackgroundColorOdd":"#FBF8F3","attributeBackgroundColorEven":"#F7F1E8"}}}%%
 flowchart LR
-    U["Navegador<br/>(clientes y personal)"] --> FE["Frontend React<br/>Vercel"]
-    FE -->|"REST + JWT"| API["API Spring Boot<br/>Google Cloud Run"]
-    API -->|"JPA / Flyway"| DB[("PostgreSQL")]
-    API -->|"Crear preferencia<br/>Consultar pago"| MP["Mercado Pago API"]
-    MP -->|"Webhook firmado<br/>POST /payments/webhook"| API
+    U["Navegador<br/>clientes y personal"]:::ext --> FE["Frontend React<br/>Vercel"]
+    FE -->|"REST + JWT"| API["API Spring Boot<br/>Cloud Run"]:::dark
+    API -->|"JPA · Flyway"| DB[("PostgreSQL")]:::accent
+    API -->|"preferencia / consulta"| MP["Mercado Pago"]:::ext
+    MP -->|"webhook firmado"| API
     U -.->|"Checkout Pro"| MP
-    API -->|"SMTP"| MAIL["Gmail"]
-    GH["GitHub Actions"] -->|"tests + imagen Docker"| API
+    API -->|"SMTP"| MAIL["Gmail"]:::ext
+    classDef dark fill:#2E211B,stroke:#2E211B,color:#F7F1E8
+    classDef accent fill:#ECA8D6,stroke:#2E211B,color:#2E211B
+    classDef ext fill:#FBF8F3,stroke:#9C7A63,color:#2E211B,stroke-dasharray:4 3
 ```
 
-Organización interna por capas:
+<details>
+<summary><b>Capas internas de la API</b></summary>
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#F7F1E8","primaryTextColor":"#2E211B","primaryBorderColor":"#2E211B","lineColor":"#9C7A63","secondaryColor":"#ECA8D6","tertiaryColor":"#FBF8F3","edgeLabelBackground":"#F7F1E8","noteBkgColor":"#ECA8D6","noteTextColor":"#2E211B","noteBorderColor":"#2E211B","actorBkg":"#2E211B","actorTextColor":"#F7F1E8","actorBorder":"#2E211B","actorLineColor":"#9C7A63","signalColor":"#9C7A63","signalTextColor":"#9C7A63","labelBoxBkgColor":"#ECA8D6","labelTextColor":"#2E211B","loopTextColor":"#9C7A63","attributeBackgroundColorOdd":"#FBF8F3","attributeBackgroundColorEven":"#F7F1E8"}}}%%
 flowchart TB
-    REQ["Petición HTTP"] --> SEC["JwtAuthFilter<br/>valida token, cuenta activa y versión de sesión"]
+    REQ["Petición HTTP"]:::ext --> SEC["JwtAuthFilter<br/>token · cuenta activa · versión de sesión"]:::dark
     SEC --> CTRL["Controllers<br/>@PreAuthorize por rol"]
-    CTRL --> SRV["Services<br/>reglas de negocio + @Transactional"]
+    CTRL --> SRV["Services<br/>reglas de negocio · @Transactional"]
     SRV --> REPO["Repositories<br/>Spring Data JPA"]
-    SRV --> INT["Integraciones<br/>MercadoPagoClient · SimulatedSunatService · EmailService"]
+    SRV --> INT["Integraciones<br/>MercadoPagoClient · SimulatedSunatService · EmailService"]:::accent
     REPO --> DB[("PostgreSQL")]
-    CTRL -. "errores" .-> EX["GlobalExceptionHandler<br/>400 / 401 / 403 / 404 / 409"]
+    CTRL -.->|"excepciones"| EX["GlobalExceptionHandler<br/>400 · 401 · 403 · 404 · 409"]:::ext
+    classDef dark fill:#2E211B,stroke:#2E211B,color:#F7F1E8
+    classDef accent fill:#ECA8D6,stroke:#2E211B,color:#2E211B
+    classDef ext fill:#FBF8F3,stroke:#9C7A63,color:#2E211B,stroke-dasharray:4 3
 ```
 
-## Funcionalidades
-
-| Módulo | Qué hace |
-|---|---|
-| **Reservas** | Disponibilidad por fechas y huéspedes, reserva web (15 min para pagar) y en recepción, check-in/out, consumos, cambio de fechas y cancelación con solicitud de reembolso. |
-| **Mercado Pago** | Checkout Pro: anticipo (50 %), total o saldo. Webhook con firma `x-signature`; estado y monto se confirman en la API de Mercado Pago; pagos duplicados se registran una vez. |
-| **Caja** | Apertura con fondo (una caja abierta a la vez), cobros por medio de pago, ingresos/egresos, reembolsos en efectivo como egreso y cierre con arqueo. |
-| **Facturación simulada** | Boleta `B001` / factura `F001`, validación de RUC/DNI, IGV 18 %, importe en letras, QR formato SUNAT y nota de crédito. **Sin conexión a SUNAT ni OSE/PSE.** |
-| **Cuentas** | Roles `ADMIN`, `RECEPCIONISTA`, `CLIENT`; cambio y restablecimiento de contraseña; deshabilitar cuentas invalida sus sesiones al instante. |
-| **Catálogo** | Categorías con comodidades, habitaciones, servicios extra, huéspedes, reclamaciones y dashboard. |
+</details>
 
 ## Flujos
 
 ### Pago con Mercado Pago
 
+El webhook nunca se cree a ciegas: la API consulta el pago en Mercado Pago antes de registrarlo.
+
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#F7F1E8","primaryTextColor":"#2E211B","primaryBorderColor":"#2E211B","lineColor":"#9C7A63","secondaryColor":"#ECA8D6","tertiaryColor":"#FBF8F3","edgeLabelBackground":"#F7F1E8","noteBkgColor":"#ECA8D6","noteTextColor":"#2E211B","noteBorderColor":"#2E211B","actorBkg":"#2E211B","actorTextColor":"#F7F1E8","actorBorder":"#2E211B","actorLineColor":"#9C7A63","signalColor":"#9C7A63","signalTextColor":"#9C7A63","labelBoxBkgColor":"#ECA8D6","labelTextColor":"#2E211B","loopTextColor":"#9C7A63","attributeBackgroundColorOdd":"#FBF8F3","attributeBackgroundColorEven":"#F7F1E8"}}}%%
 sequenceDiagram
     autonumber
-    actor C as Cliente
+    participant C as Cliente
     participant FE as Frontend
     participant API as API
     participant MP as Mercado Pago
-    C->>FE: Confirma reserva y elige anticipo o total
+    C->>FE: Elige anticipo o pago total
     FE->>API: POST /client/reservations
-    API-->>FE: Reserva PENDING (expira en 15 min)
+    API-->>FE: Reserva PENDING · expira en 15 min
     FE->>API: POST /client/reservations/{id}/payment-preference
-    API->>MP: Crear preferencia (external_reference = código de reserva)
-    MP-->>API: init_point
-    FE->>MP: Redirige al Checkout Pro
-    C->>MP: Paga
-    MP->>API: Webhook (x-signature)
-    API->>MP: GET /v1/payments/{id} (fuente de verdad)
-    API->>API: Registra pago y, si cubre el anticipo, CONFIRMED
-    MP-->>FE: Vuelve a /payment/result
-    FE->>API: Consulta la reserva hasta verla confirmada
+    API->>MP: Crea preferencia (referencia = código de reserva)
+    MP-->>FE: init_point
+    C->>MP: Paga en Checkout Pro
+    MP->>API: Webhook con x-signature
+    API->>MP: GET /v1/payments/{id}
+    Note over API: Registra el pago una sola vez<br/>y confirma si cubre el anticipo
+    MP-->>FE: Retorno a /payment/result
+    FE->>API: Consulta hasta ver CONFIRMED
 ```
 
-### Estados de una reserva
+### Ciclo de vida de una reserva
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#F7F1E8","primaryTextColor":"#2E211B","primaryBorderColor":"#2E211B","lineColor":"#9C7A63","secondaryColor":"#ECA8D6","tertiaryColor":"#FBF8F3","edgeLabelBackground":"#F7F1E8","noteBkgColor":"#ECA8D6","noteTextColor":"#2E211B","noteBorderColor":"#2E211B","actorBkg":"#2E211B","actorTextColor":"#F7F1E8","actorBorder":"#2E211B","actorLineColor":"#9C7A63","signalColor":"#9C7A63","signalTextColor":"#9C7A63","labelBoxBkgColor":"#ECA8D6","labelTextColor":"#2E211B","loopTextColor":"#9C7A63","attributeBackgroundColorOdd":"#FBF8F3","attributeBackgroundColorEven":"#F7F1E8"}}}%%
 stateDiagram-v2
-    [*] --> PENDING: Reserva web
-    [*] --> CONFIRMED: Reserva en recepción
-    PENDING --> CONFIRMED: Pago que cubre el anticipo
-    PENDING --> CANCELLED: Expira (15 min) o el cliente cancela
-    CONFIRMED --> CHECKED_IN: Check-in con habitación
-    CONFIRMED --> CANCELLED: Cancelación (genera reembolso si hubo pago)
-    CHECKED_IN --> CHECKED_OUT: Check-out
+    direction LR
+    [*] --> PENDING: reserva web
+    [*] --> CONFIRMED: reserva en recepción
+    PENDING --> CONFIRMED: pago cubre el anticipo
+    PENDING --> CANCELLED: expira o se cancela
+    CONFIRMED --> CHECKED_IN: check-in
+    CONFIRMED --> CANCELLED: cancelación + reembolso
+    CHECKED_IN --> CHECKED_OUT: check-out
     CHECKED_OUT --> [*]
     CANCELLED --> [*]
 ```
@@ -99,54 +124,61 @@ stateDiagram-v2
 ### Caja de recepción
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#F7F1E8","primaryTextColor":"#2E211B","primaryBorderColor":"#2E211B","lineColor":"#9C7A63","secondaryColor":"#ECA8D6","tertiaryColor":"#FBF8F3","edgeLabelBackground":"#F7F1E8","noteBkgColor":"#ECA8D6","noteTextColor":"#2E211B","noteBorderColor":"#2E211B","actorBkg":"#2E211B","actorTextColor":"#F7F1E8","actorBorder":"#2E211B","actorLineColor":"#9C7A63","signalColor":"#9C7A63","signalTextColor":"#9C7A63","labelBoxBkgColor":"#ECA8D6","labelTextColor":"#2E211B","loopTextColor":"#9C7A63","attributeBackgroundColorOdd":"#FBF8F3","attributeBackgroundColorEven":"#F7F1E8"}}}%%
 flowchart LR
-    A(["Recepcionista inicia sesión"]) --> B{"¿Tiene caja abierta?"}
-    B -->|"No"| C["Abrir caja<br/>con fondo inicial"]
-    B -->|"Sí, propia"| D["Panel de trabajo"]
-    B -->|"Abierta por otra persona"| X["Bloqueado hasta que la cierre<br/>quien la abrió o un admin"]
+    A(["Inicia sesión"]):::ext --> B{"¿Caja abierta?"}
+    B -->|"no"| C["Abrir caja<br/>fondo inicial"]:::accent
+    B -->|"sí, propia"| D["Turno de trabajo"]:::dark
+    B -->|"de otra persona"| X["Bloqueado hasta<br/>que la cierren"]:::ext
     C --> D
-    D --> E["Cobros: efectivo, tarjeta,<br/>transferencia, Yape/Plin"]
-    D --> F["Ingresos / egresos manuales<br/>reembolsos en efectivo"]
+    D --> E["Cobros<br/>efectivo · tarjeta · transferencia · Yape/Plin"]
+    D --> F["Ingresos y egresos<br/>reembolsos en efectivo"]
     E --> D
     F --> D
-    D --> G["Cerrar caja: arqueo<br/>esperado = fondo + ingresos − egresos (efectivo)"]
-    G --> H(["Puede cerrar sesión"])
+    D --> G["Cerrar caja · arqueo<br/>fondo + ingresos − egresos"]:::accent
+    G --> H(["Puede cerrar sesión"]):::ext
+    classDef dark fill:#2E211B,stroke:#2E211B,color:#F7F1E8
+    classDef accent fill:#ECA8D6,stroke:#2E211B,color:#2E211B
+    classDef ext fill:#FBF8F3,stroke:#9C7A63,color:#2E211B,stroke-dasharray:4 3
 ```
 
-### Deshabilitar una cuenta
+<details>
+<summary><b>Deshabilitar una cuenta (expulsión inmediata)</b></summary>
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#F7F1E8","primaryTextColor":"#2E211B","primaryBorderColor":"#2E211B","lineColor":"#9C7A63","secondaryColor":"#ECA8D6","tertiaryColor":"#FBF8F3","edgeLabelBackground":"#F7F1E8","noteBkgColor":"#ECA8D6","noteTextColor":"#2E211B","noteBorderColor":"#2E211B","actorBkg":"#2E211B","actorTextColor":"#F7F1E8","actorBorder":"#2E211B","actorLineColor":"#9C7A63","signalColor":"#9C7A63","signalTextColor":"#9C7A63","labelBoxBkgColor":"#ECA8D6","labelTextColor":"#2E211B","loopTextColor":"#9C7A63","attributeBackgroundColorOdd":"#FBF8F3","attributeBackgroundColorEven":"#F7F1E8"}}}%%
 sequenceDiagram
-    actor A as Admin
+    participant A as Admin
     participant API as API
-    actor U as Usuario con sesión abierta
-    A->>API: PATCH /users/{id}/status (active=false)
-    API->>API: active=false y token_version + 1
-    U->>API: Cualquier petición o latido /auth/session
+    participant U as Usuario conectado
+    A->>API: PATCH /users/{id}/status · active=false
+    API->>API: active=false · token_version + 1
+    U->>API: Siguiente petición o latido /auth/session
     API-->>U: 401 ACCOUNT_DISABLED
-    Note over U: El frontend cierra la sesión y muestra el motivo
+    Note over U: El frontend cierra la sesión<br/>y muestra el motivo
 ```
+
+</details>
 
 ## Modelo de datos
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#F7F1E8","primaryTextColor":"#2E211B","primaryBorderColor":"#2E211B","lineColor":"#9C7A63","secondaryColor":"#ECA8D6","tertiaryColor":"#FBF8F3","edgeLabelBackground":"#F7F1E8","noteBkgColor":"#ECA8D6","noteTextColor":"#2E211B","noteBorderColor":"#2E211B","actorBkg":"#2E211B","actorTextColor":"#F7F1E8","actorBorder":"#2E211B","actorLineColor":"#9C7A63","signalColor":"#9C7A63","signalTextColor":"#9C7A63","labelBoxBkgColor":"#ECA8D6","labelTextColor":"#2E211B","loopTextColor":"#9C7A63","attributeBackgroundColorOdd":"#FBF8F3","attributeBackgroundColorEven":"#F7F1E8"}}}%%
 erDiagram
-    USERS ||--o{ RESERVATIONS : "crea (web)"
-    GUESTS ||--o{ RESERVATIONS : "hospeda"
+    USERS ||--o{ RESERVATIONS : "reserva en web"
+    GUESTS ||--o{ RESERVATIONS : "se hospeda"
     ROOM_CATEGORIES ||--o{ ROOMS : "agrupa"
-    ROOM_CATEGORIES ||--o{ RESERVATIONS : "reservada"
-    ROOM_CATEGORIES }o--o{ AMENITIES : "category_amenities"
+    ROOM_CATEGORIES ||--o{ RESERVATIONS : "categoría"
+    ROOM_CATEGORIES }o--o{ AMENITIES : "comodidades"
     ROOMS |o--o{ RESERVATIONS : "asignada"
     RESERVATIONS ||--o{ PAYMENTS : "pagos"
     RESERVATIONS ||--o{ PAYMENT_ATTEMPTS : "intentos MP"
     RESERVATIONS ||--o{ REFUNDS : "reembolsos"
     RESERVATIONS ||--o{ CONSUMPTIONS : "consumos"
     EXTRA_SERVICES ||--o{ CONSUMPTIONS : "servicio"
-    RESERVATIONS ||--o{ INVOICES : "comprobantes (uno vigente)"
+    RESERVATIONS ||--o{ INVOICES : "comprobantes"
     CASH_SESSIONS ||--o{ CASH_MOVEMENTS : "movimientos"
     PAYMENTS |o--o| CASH_MOVEMENTS : "cobro en caja"
-    USERS ||--o| VERIFICATION_TOKENS : "OTP"
-
     USERS {
         bigint id PK
         string email
@@ -163,18 +195,11 @@ erDiagram
         int guests
         numeric total_price
     }
-    PAYMENTS {
-        bigint id PK
-        numeric amount
-        string payment_method
-        string reference
-    }
     INVOICES {
         bigint id PK
         string document_type
         string series
         int correlative
-        string status
         string sunat_status
     }
     CASH_SESSIONS {
@@ -184,66 +209,72 @@ erDiagram
         numeric expected_cash
         numeric counted_amount
     }
-    CASH_MOVEMENTS {
-        bigint id PK
-        string type
-        string method
-        numeric amount
-        string concept
-    }
 ```
 
-## Variables de entorno
+## Inicio rápido
 
-Toda la configuración sensible se lee de variables de entorno; **no hay credenciales en el repositorio**.
-Plantilla: [`.env.example`](.env.example) (los `.env` reales están en `.gitignore`).
+| Requisito | Versión |
+|:--|:--|
+| Java | 21 |
+| Docker | cualquiera reciente (base local y tests) |
 
-<!-- AUTO-GENERATED: variables de entorno (fuente: .env.example) - no editar a mano; regenerar desde el codigo -->
-| Variable | Obligatoria | Descripción |
-|---|---|---|
-| `DB_URL` | Sí | JDBC de PostgreSQL |
-| `DB_USERNAME` | Sí | Usuario de la base |
-| `DB_PASSWORD` | Sí | Contraseña de la base |
-| `JWT_SECRET` | Sí | Clave HMAC en Base64 (mín. 32 bytes): `openssl rand -base64 48` |
-| `JWT_EXPIRATION` | Sí | Vigencia del token en ms |
-| `CORS_ALLOWED_ORIGINS` | Sí | Orígenes del frontend, separados por coma |
-| `MAIL_USERNAME` | Sí | Cuenta SMTP (Gmail) |
-| `MAIL_PASSWORD` | Sí | Contraseña de aplicación de Gmail |
-| `MP_ACCESS_TOKEN` | No | Access token de Mercado Pago (`TEST-...` en sandbox); sin él no se crean pagos |
-| `MP_WEBHOOK_SECRET` | No | Clave de webhooks de Mercado Pago (valida `x-signature`) |
-| `FRONTEND_URL` | Sí | URL pública del frontend (retorno de Mercado Pago) |
-| `BACKEND_URL` | Sí | URL pública **https** del backend (Mercado Pago solo notifica a https) |
-| `BILLING_RUC` | No | RUC del emisor en comprobantes simulados |
-| `BILLING_NAME` | No | Razón social del emisor |
-| `BILLING_ADDRESS` | No | Dirección fiscal del emisor |
-| `PORT` | No | Puerto HTTP (por defecto `8080`) |
-<!-- /AUTO-GENERATED -->
-
-## Ejecutar en local
-
-Requisitos: **Java 21** y **Docker**.
+**1 · Levanta PostgreSQL**
 
 ```bash
-# 1. Base de datos local
 docker run -d --name hotel-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=hotel -p 5432:5432 postgres:16-alpine
-
-# 2. Variables (ver .env.example) y arranque; Flyway crea el esquema
-export DB_URL=jdbc:postgresql://localhost:5432/hotel DB_USERNAME=postgres DB_PASSWORD=postgres
-export JWT_SECRET=$(openssl rand -base64 48) JWT_EXPIRATION=86400000
-export CORS_ALLOWED_ORIGINS=http://localhost:5173 MAIL_USERNAME=... MAIL_PASSWORD=...
-./mvnw spring-boot:run
 ```
 
-**Primer administrador:** no se crea automáticamente. Genera el hash y, con la base ya migrada, insértalo:
+**2 · Configura y arranca** (Flyway crea el esquema al iniciar)
+
+```bash
+cp .env.example .env          # completa los valores; ver Configuración
+set -a; source .env; set +a
+./mvnw spring-boot:run        # http://localhost:8080/api/v1
+```
+
+**3 · Crea el primer administrador**
 
 ```bash
 ./mvnw -q compile
-java -cp "target/classes:$(./mvnw -q dependency:build-classpath -Dmdep.outputFile=/dev/stdout)" com.hotel.app.HashGen "TuContraseñaSegura"
-# INSERT INTO users (email, password, role, is_verified, active, token_version, created_at)
-# VALUES ('admin@tuhotel.com', '<hash>', 'ADMIN', true, true, 0, now());
+java -cp "target/classes:$(./mvnw -q dependency:build-classpath -Dmdep.outputFile=/dev/stdout)" \
+  com.hotel.app.HashGen "TuContraseñaSegura"
 ```
 
-Para recibir webhooks de Mercado Pago en local, expón el backend por https (p. ej. `ngrok http 8080`) y usa esa URL en `BACKEND_URL`.
+```sql
+INSERT INTO users (email, password, role, is_verified, active, token_version, created_at)
+VALUES ('admin@tuhotel.com', '<hash generado>', 'ADMIN', true, true, 0, now());
+```
+
+> [!TIP]
+> Para probar webhooks en local expón el puerto por https (`ngrok http 8080`) y usa esa URL en `BACKEND_URL`.
+
+## Configuración
+
+Toda la configuración sensible llega por variables de entorno; **el repositorio no contiene credenciales**.
+Plantilla: [`.env.example`](.env.example). Los `.env` reales están en `.gitignore`.
+
+<sub>● obligatoria · ○ opcional</sub>
+
+<!-- AUTO-GENERATED: variables de entorno (fuente: .env.example) - no editar a mano -->
+| | Variable | Descripción |
+|:-:|:--|:--|
+| ● | `DB_URL` | JDBC de PostgreSQL <sub>· Base de datos</sub> |
+| ● | `DB_USERNAME` | Usuario de la base <sub>· Base de datos</sub> |
+| ● | `DB_PASSWORD` | Contraseña de la base <sub>· Base de datos</sub> |
+| ● | `JWT_SECRET` | Clave HMAC en Base64, mín. 32 bytes · `openssl rand -base64 48` <sub>· Seguridad</sub> |
+| ● | `JWT_EXPIRATION` | Vigencia del token (ms) <sub>· Seguridad</sub> |
+| ● | `CORS_ALLOWED_ORIGINS` | Orígenes del frontend, separados por coma <sub>· Seguridad</sub> |
+| ● | `MAIL_USERNAME` | Cuenta SMTP (Gmail) <sub>· Correo</sub> |
+| ● | `MAIL_PASSWORD` | Contraseña de aplicación de Gmail <sub>· Correo</sub> |
+| ○ | `MP_ACCESS_TOKEN` | Access token (`TEST-…` en sandbox); sin él no se crean pagos <sub>· Mercado Pago</sub> |
+| ○ | `MP_WEBHOOK_SECRET` | Clave de webhooks; valida `x-signature` <sub>· Mercado Pago</sub> |
+| ● | `FRONTEND_URL` | URL pública del frontend (retorno del checkout) <sub>· Mercado Pago</sub> |
+| ● | `BACKEND_URL` | URL pública **https** del backend (destino del webhook) <sub>· Mercado Pago</sub> |
+| ○ | `BILLING_RUC` | RUC del emisor <sub>· Comprobantes</sub> |
+| ○ | `BILLING_NAME` | Razón social del emisor <sub>· Comprobantes</sub> |
+| ○ | `BILLING_ADDRESS` | Dirección fiscal del emisor <sub>· Comprobantes</sub> |
+| ○ | `PORT` | Puerto HTTP (por defecto `8080`) <sub>· Servidor</sub> |
+<!-- /AUTO-GENERATED -->
 
 ## Tests
 
@@ -251,135 +282,260 @@ Para recibir webhooks de Mercado Pago en local, expón el backend por https (p. 
 ./mvnw test
 ```
 
-Los tests de integración levantan su **propia PostgreSQL en Docker** (Testcontainers); nunca usan una base real
-ni envían correos. Requiere Docker en ejecución.
+Cada ejecución levanta una **PostgreSQL desechable en Docker** (Testcontainers): nunca toca una base real ni envía correos.
 
 ## API
 
-Base `/api/v1`. Endpoints sin rol explícito requieren sesión iniciada (cualquier rol).
+Base `/api/v1` · 78 endpoints · autenticación `Authorization: Bearer <jwt>`.
 
-<!-- AUTO-GENERATED: referencia de endpoints (fuente: controllers @RequestMapping/@PreAuthorize + SecurityConfig) - no editar a mano; regenerar desde el codigo -->
-| Método | Ruta | Acceso | Módulo |
-|---|---|---|---|
-| `GET` | `/api/v1/account/me` | ADMIN, RECEPCIONISTA | Account |
-| `PATCH` | `/api/v1/account/password` | ADMIN, RECEPCIONISTA | Account |
-| `GET` | `/api/v1/admin/refunds` | ADMIN, RECEPCIONISTA | AdminRefund |
-| `POST` | `/api/v1/admin/refunds/{id}/process` | ADMIN, RECEPCIONISTA | AdminRefund |
-| `GET` | `/api/v1/amenities` | Autenticado | Amenity |
-| `POST` | `/api/v1/amenities` | ADMIN | Amenity |
-| `POST` | `/api/v1/auth/login` | Público | Auth |
-| `GET` | `/api/v1/auth/session` | Autenticado | Auth |
-| `POST` | `/api/v1/auth/register` | ADMIN | Auth |
-| `GET` | `/api/v1/cash/current` | ADMIN, RECEPCIONISTA | Cash |
-| `POST` | `/api/v1/cash/open` | ADMIN, RECEPCIONISTA | Cash |
-| `POST` | `/api/v1/cash/movements` | ADMIN, RECEPCIONISTA | Cash |
-| `POST` | `/api/v1/cash/close` | ADMIN, RECEPCIONISTA | Cash |
-| `GET` | `/api/v1/cash/sessions` | ADMIN, RECEPCIONISTA | Cash |
-| `GET` | `/api/v1/cash/sessions/{id}` | ADMIN, RECEPCIONISTA | Cash |
-| `POST` | `/api/v1/client/auth/register` | Público | ClientAuth |
-| `POST` | `/api/v1/client/auth/verify` | Público | ClientAuth |
-| `POST` | `/api/v1/client/auth/forgot-password` | Público | ClientPasswordReset |
-| `POST` | `/api/v1/client/auth/reset-password` | Público | ClientPasswordReset |
-| `PUT` | `/api/v1/client/profile` | Autenticado | ClientProfile |
-| `POST` | `/api/v1/client/profile/password-request` | Autenticado | ClientProfile |
-| `POST` | `/api/v1/client/profile/password-change` | Autenticado | ClientProfile |
-| `POST` | `/api/v1/client/reservations` | CLIENT | ClientReservation |
-| `GET` | `/api/v1/client/reservations` | CLIENT | ClientReservation |
-| `POST` | `/api/v1/client/reservations/{id}/cancel` | CLIENT | ClientReservation |
-| `PATCH` | `/api/v1/client/reservations/{id}/dates` | CLIENT | ClientReservation |
-| `POST` | `/api/v1/client/reservations/{id}/payment-preference` | CLIENT | ClientReservation |
-| `GET` | `/api/v1/client/reservations/{id}/invoice/pdf` | CLIENT | ClientReservation |
-| `POST` | `/api/v1/complaints` | Público | Complaint |
-| `GET` | `/api/v1/complaints` | ADMIN, RECEPCIONISTA | Complaint |
-| `PATCH` | `/api/v1/complaints/{id}/status` | ADMIN, RECEPCIONISTA | Complaint |
-| `POST` | `/api/v1/consumptions` | ADMIN, RECEPCIONISTA | Consumption |
-| `GET` | `/api/v1/consumptions/reservation/{reservationId}` | ADMIN, RECEPCIONISTA | Consumption |
-| `DELETE` | `/api/v1/consumptions/{id}` | ADMIN | Consumption |
-| `GET` | `/api/v1/dashboard` | ADMIN, RECEPCIONISTA | Dashboard |
-| `POST` | `/api/v1/services` | ADMIN | ExtraService |
-| `PUT` | `/api/v1/services/{id}` | ADMIN | ExtraService |
-| `GET` | `/api/v1/services` | ADMIN, RECEPCIONISTA | ExtraService |
-| `POST` | `/api/v1/guests` | ADMIN, RECEPCIONISTA | Guest |
-| `GET` | `/api/v1/guests/{id}` | ADMIN, RECEPCIONISTA | Guest |
-| `GET` | `/api/v1/guests` | ADMIN, RECEPCIONISTA | Guest |
-| `PUT` | `/api/v1/guests/{id}` | ADMIN, RECEPCIONISTA | Guest |
-| `POST` | `/api/v1/invoices/reservation/{reservationId}` | ADMIN, RECEPCIONISTA | Invoice |
-| `GET` | `/api/v1/invoices/reservation/{reservationId}` | ADMIN, RECEPCIONISTA | Invoice |
-| `GET` | `/api/v1/invoices` | ADMIN, RECEPCIONISTA | Invoice |
-| `PATCH` | `/api/v1/invoices/{id}/void` | ADMIN, RECEPCIONISTA | Invoice |
-| `PATCH` | `/api/v1/invoices/{id}/pay` | ADMIN, RECEPCIONISTA | Invoice |
-| `GET` | `/api/v1/invoices/{id}/pdf` | ADMIN, RECEPCIONISTA | Invoice |
-| `GET` | `/api/v1/public/search` | Público | PublicSearch |
-| `GET` | `/api/v1/rooms/search` | Público | Reservation |
-| `POST` | `/api/v1/reservations` | ADMIN, RECEPCIONISTA | Reservation |
-| `GET` | `/api/v1/reservations` | ADMIN, RECEPCIONISTA | Reservation |
-| `PATCH` | `/api/v1/reservations/{id}/checkin` | ADMIN, RECEPCIONISTA | Reservation |
-| `PATCH` | `/api/v1/reservations/{id}/checkout` | ADMIN, RECEPCIONISTA | Reservation |
-| `PATCH` | `/api/v1/reservations/{id}/cancel` | ADMIN, RECEPCIONISTA | Reservation |
-| `POST` | `/api/v1/reservations/{id}/payments` | ADMIN, RECEPCIONISTA | Reservation |
-| `GET` | `/api/v1/reservations/{id}/payments` | ADMIN, RECEPCIONISTA | Reservation |
-| `GET` | `/api/v1/reservations/code/{bookingCode}` | ADMIN, RECEPCIONISTA | Reservation |
-| `POST` | `/api/v1/categories` | ADMIN | RoomCategory |
-| `POST` | `/api/v1/categories/{id}/image` | ADMIN | RoomCategory |
-| `PUT` | `/api/v1/categories/{id}` | ADMIN | RoomCategory |
-| `DELETE` | `/api/v1/categories/{id}` | ADMIN | RoomCategory |
-| `GET` | `/api/v1/categories/{id}` | Público | RoomCategory |
-| `GET` | `/api/v1/categories` | Público | RoomCategory |
-| `POST` | `/api/v1/rooms` | ADMIN | Room |
-| `PUT` | `/api/v1/rooms/{id}` | ADMIN | Room |
-| `DELETE` | `/api/v1/rooms/{id}` | ADMIN | Room |
-| `GET` | `/api/v1/rooms/{id}` | Autenticado | Room |
-| `GET` | `/api/v1/rooms` | Autenticado | Room |
-| `PATCH` | `/api/v1/rooms/{id}/status` | ADMIN | Room |
-| `GET` | `/api/v1/users` | ADMIN | User |
-| `GET` | `/api/v1/users/clients` | ADMIN | User |
-| `PATCH` | `/api/v1/users/{id}/status` | ADMIN | User |
-| `POST` | `/api/v1/users` | ADMIN | User |
-| `PUT` | `/api/v1/users/{id}` | ADMIN | User |
-| `PATCH` | `/api/v1/users/{id}/password` | ADMIN | User |
-| `DELETE` | `/api/v1/users/{id}` | ADMIN | User |
-| `POST` | `/api/v1/payments/webhook` | Público (firma Mercado Pago) | WebhookPayment |
+<!-- AUTO-GENERATED: endpoints por módulo (fuente: controllers: @RequestMapping + @PreAuthorize) - no editar a mano -->
+<details>
+<summary><b>Autenticación <sub>· 7 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `POST` | `/auth/login` | Público |
+| `GET` | `/auth/session` | Sesión |
+| `POST` | `/auth/register` | ADMIN |
+| `POST` | `/client/auth/register` | Público |
+| `POST` | `/client/auth/verify` | Público |
+| `POST` | `/client/auth/forgot-password` | Público |
+| `POST` | `/client/auth/reset-password` | Público |
+
+</details>
+
+<details>
+<summary><b>Mi cuenta <sub>· 2 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `GET` | `/account/me` | ADMIN, RECEP. |
+| `PATCH` | `/account/password` | ADMIN, RECEP. |
+
+</details>
+
+<details>
+<summary><b>Perfil del cliente <sub>· 3 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `PUT` | `/client/profile` | Sesión |
+| `POST` | `/client/profile/password-request` | Sesión |
+| `POST` | `/client/profile/password-change` | Sesión |
+
+</details>
+
+<details>
+<summary><b>Reservas del cliente <sub>· 6 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `POST` | `/client/reservations` | CLIENT |
+| `GET` | `/client/reservations` | CLIENT |
+| `POST` | `/client/reservations/{id}/cancel` | CLIENT |
+| `PATCH` | `/client/reservations/{id}/dates` | CLIENT |
+| `POST` | `/client/reservations/{id}/payment-preference` | CLIENT |
+| `GET` | `/client/reservations/{id}/invoice/pdf` | CLIENT |
+
+</details>
+
+<details>
+<summary><b>Reservas (recepción) <sub>· 9 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `GET` | `/rooms/search` | Público |
+| `POST` | `/reservations` | ADMIN, RECEP. |
+| `GET` | `/reservations` | ADMIN, RECEP. |
+| `PATCH` | `/reservations/{id}/checkin` | ADMIN, RECEP. |
+| `PATCH` | `/reservations/{id}/checkout` | ADMIN, RECEP. |
+| `PATCH` | `/reservations/{id}/cancel` | ADMIN, RECEP. |
+| `POST` | `/reservations/{id}/payments` | ADMIN, RECEP. |
+| `GET` | `/reservations/{id}/payments` | ADMIN, RECEP. |
+| `GET` | `/reservations/code/{bookingCode}` | ADMIN, RECEP. |
+
+</details>
+
+<details>
+<summary><b>Pagos – Mercado Pago <sub>· 1 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `POST` | `/payments/webhook` | Público · firma MP |
+
+</details>
+
+<details>
+<summary><b>Caja <sub>· 6 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `GET` | `/cash/current` | ADMIN, RECEP. |
+| `POST` | `/cash/open` | ADMIN, RECEP. |
+| `POST` | `/cash/movements` | ADMIN, RECEP. |
+| `POST` | `/cash/close` | ADMIN, RECEP. |
+| `GET` | `/cash/sessions` | ADMIN, RECEP. |
+| `GET` | `/cash/sessions/{id}` | ADMIN, RECEP. |
+
+</details>
+
+<details>
+<summary><b>Facturación simulada <sub>· 6 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `POST` | `/invoices/reservation/{reservationId}` | ADMIN, RECEP. |
+| `GET` | `/invoices/reservation/{reservationId}` | ADMIN, RECEP. |
+| `GET` | `/invoices` | ADMIN, RECEP. |
+| `PATCH` | `/invoices/{id}/void` | ADMIN, RECEP. |
+| `PATCH` | `/invoices/{id}/pay` | ADMIN, RECEP. |
+| `GET` | `/invoices/{id}/pdf` | ADMIN, RECEP. |
+
+</details>
+
+<details>
+<summary><b>Reembolsos <sub>· 2 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `GET` | `/admin/refunds` | ADMIN, RECEP. |
+| `POST` | `/admin/refunds/{id}/process` | ADMIN, RECEP. |
+
+</details>
+
+<details>
+<summary><b>Consumos <sub>· 3 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `POST` | `/consumptions` | ADMIN, RECEP. |
+| `GET` | `/consumptions/reservation/{reservationId}` | ADMIN, RECEP. |
+| `DELETE` | `/consumptions/{id}` | ADMIN |
+
+</details>
+
+<details>
+<summary><b>Huéspedes <sub>· 4 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `POST` | `/guests` | ADMIN, RECEP. |
+| `GET` | `/guests/{id}` | ADMIN, RECEP. |
+| `GET` | `/guests` | ADMIN, RECEP. |
+| `PUT` | `/guests/{id}` | ADMIN, RECEP. |
+
+</details>
+
+<details>
+<summary><b>Catálogo <sub>· 18 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `GET` | `/amenities` | Público |
+| `POST` | `/amenities` | ADMIN |
+| `POST` | `/services` | ADMIN |
+| `PUT` | `/services/{id}` | ADMIN |
+| `GET` | `/services` | ADMIN, RECEP. |
+| `GET` | `/public/search` | Público |
+| `POST` | `/categories` | ADMIN |
+| `POST` | `/categories/{id}/image` | ADMIN |
+| `PUT` | `/categories/{id}` | ADMIN |
+| `DELETE` | `/categories/{id}` | ADMIN |
+| `GET` | `/categories/{id}` | Público |
+| `GET` | `/categories` | Público |
+| `POST` | `/rooms` | ADMIN |
+| `PUT` | `/rooms/{id}` | ADMIN |
+| `DELETE` | `/rooms/{id}` | ADMIN |
+| `GET` | `/rooms/{id}` | Público |
+| `GET` | `/rooms` | Público |
+| `PATCH` | `/rooms/{id}/status` | ADMIN |
+
+</details>
+
+<details>
+<summary><b>Personal y cuentas <sub>· 7 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `GET` | `/users` | ADMIN |
+| `GET` | `/users/clients` | ADMIN |
+| `PATCH` | `/users/{id}/status` | ADMIN |
+| `POST` | `/users` | ADMIN |
+| `PUT` | `/users/{id}` | ADMIN |
+| `PATCH` | `/users/{id}/password` | ADMIN |
+| `DELETE` | `/users/{id}` | ADMIN |
+
+</details>
+
+<details>
+<summary><b>Reclamaciones <sub>· 3 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `POST` | `/complaints` | Público |
+| `GET` | `/complaints` | ADMIN, RECEP. |
+| `PATCH` | `/complaints/{id}/status` | ADMIN, RECEP. |
+
+</details>
+
+<details>
+<summary><b>Dashboard <sub>· 1 endpoints</sub></b></summary>
+
+| Método | Ruta | Acceso |
+|:--|:--|:--|
+| `GET` | `/dashboard` | ADMIN, RECEP. |
+
+</details>
 <!-- /AUTO-GENERATED -->
 
 ## Migraciones
 
-Flyway las aplica automáticamente al arrancar.
+<details>
+<summary><b>19 migraciones Flyway <sub>· se aplican solas al arrancar</sub></b></summary>
 
-<!-- AUTO-GENERATED: migraciones (fuente: src/main/resources/db/migration) - no editar a mano; regenerar desde el codigo -->
-| Versión | Migración |
-|---|---|
-| V1 | init |
-| V2 | add reservation fields |
-| V3 | verification tokens |
-| V4 | add expires at to reservations |
-| V5 | add user id to reservations |
-| V6 | add payment attempts |
-| V7 | add payments |
-| V8 | add cancellation fields |
-| V9 | add refunds |
-| V10 | add translation fields |
-| V11 | remove translation fields |
-| V12 | update users role check |
-| V13 | add purpose to verification tokens |
-| V14 | add complaints |
-| V15 | mercadopago payments |
-| V16 | simulated electronic invoicing |
-| V17 | cash register and guests |
-| V18 | account status and sessions |
-| V19 | refund method |
+<!-- AUTO-GENERATED: migraciones (fuente: src/main/resources/db/migration) - no editar a mano -->
+| Versión | Cambio |
+|:--|:--|
+| `V1` | init |
+| `V2` | add reservation fields |
+| `V3` | verification tokens |
+| `V4` | add expires at to reservations |
+| `V5` | add user id to reservations |
+| `V6` | add payment attempts |
+| `V7` | add payments |
+| `V8` | add cancellation fields |
+| `V9` | add refunds |
+| `V10` | add translation fields |
+| `V11` | remove translation fields |
+| `V12` | update users role check |
+| `V13` | add purpose to verification tokens |
+| `V14` | add complaints |
+| `V15` | mercadopago payments |
+| `V16` | simulated electronic invoicing |
+| `V17` | cash register and guests |
+| `V18` | account status and sessions |
+| `V19` | refund method |
 <!-- /AUTO-GENERATED -->
+
+</details>
 
 ## Despliegue
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#F7F1E8","primaryTextColor":"#2E211B","primaryBorderColor":"#2E211B","lineColor":"#9C7A63","secondaryColor":"#ECA8D6","tertiaryColor":"#FBF8F3","edgeLabelBackground":"#F7F1E8","noteBkgColor":"#ECA8D6","noteTextColor":"#2E211B","noteBorderColor":"#2E211B","actorBkg":"#2E211B","actorTextColor":"#F7F1E8","actorBorder":"#2E211B","actorLineColor":"#9C7A63","signalColor":"#9C7A63","signalTextColor":"#9C7A63","labelBoxBkgColor":"#ECA8D6","labelTextColor":"#2E211B","loopTextColor":"#9C7A63","attributeBackgroundColorOdd":"#FBF8F3","attributeBackgroundColorEven":"#F7F1E8"}}}%%
 flowchart LR
-    P["git push a main"] --> CI["GitHub Actions: mvn test<br/>(Testcontainers)"]
-    CI -->|"OK"| IMG["Imagen Docker<br/>gcr.io"]
-    IMG --> CR["Cloud Run<br/>variables desde GitHub Secrets"]
-    CR --> FW["Flyway migra la base al arrancar"]
-    CI -->|"Falla"| STOP["No se despliega"]
+    P(["push a main"]):::ext --> CI["GitHub Actions<br/>mvn test · Testcontainers"]
+    CI -->|"verde"| IMG["Imagen Docker"]
+    IMG --> CR["Cloud Run<br/>secrets de GitHub"]:::dark
+    CR --> FW["Flyway migra<br/>al arrancar"]:::accent
+    CI -->|"rojo"| STOP["No se despliega"]:::ext
+    classDef dark fill:#2E211B,stroke:#2E211B,color:#F7F1E8
+    classDef accent fill:#ECA8D6,stroke:#2E211B,color:#2E211B
+    classDef ext fill:#FBF8F3,stroke:#9C7A63,color:#2E211B,stroke-dasharray:4 3
 ```
 
-## Licencia
+---
 
-Apache 2.0 — ver [LICENSE](LICENSE).
+<div align="center">
+<sub>Apache 2.0 · <a href="LICENSE">LICENSE</a></sub>
+</div>

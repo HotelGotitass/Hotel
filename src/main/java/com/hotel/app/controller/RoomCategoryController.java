@@ -11,7 +11,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.util.List;
 
@@ -32,13 +31,8 @@ public class RoomCategoryController {
     @PostMapping("/{id}/image")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<RoomCategoryResponse> uploadImage(@PathVariable Long id, @RequestParam("file") MultipartFile file) {
-        String fileName = fileStorageService.storeFile(file);
-        String fileDownloadUri = ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path("/uploads/")
-                .path(fileName)
-                .toUriString();
-        
-        return ResponseEntity.ok(categoryService.updateImageUrl(id, fileDownloadUri));
+        String imageUrl = fileStorageService.storeFile(file);
+        return ResponseEntity.ok(categoryService.updateImageUrl(id, imageUrl));
     }
 
     @PutMapping("/{id}")

@@ -266,6 +266,7 @@ Plantilla: [`.env.example`](.env.example). Los `.env` reales están en `.gitigno
 | ● | `MAIL_USERNAME` | Cuenta SMTP (Gmail) <sub>· Correo</sub> |
 | ● | `MAIL_PASSWORD` | Contraseña de aplicación de Gmail <sub>· Correo</sub> |
 | ○ | `MP_ACCESS_TOKEN` | Access token (`TEST-…` en sandbox); sin él no se crean pagos <sub>· Mercado Pago</sub> |
+| ○ | `CLOUDINARY_URL` | Credencial de Cloudinary para las imágenes del panel; sin ella se usa `uploads/` (se pierde al redesplegar) <sub>· Imágenes</sub> |
 | ○ | `MP_PUBLIC_KEY` | Public key del Payment Brick; se expone en `/api/v1/public/payments/config` <sub>· Mercado Pago</sub> |
 | ● | `FRONTEND_URL` | URL pública del frontend (retorno del checkout) <sub>· Mercado Pago</sub> |
 | ● | `BACKEND_URL` | URL pública **https** del backend (destino del webhook) <sub>· Mercado Pago</sub> |
@@ -566,6 +567,7 @@ nunca se escriben en el código ni en los logs.
 | `JWT_EXPIRATION` | Variable del contenedor · Vigencia del token (ms) |
 | `CORS_ALLOWED_ORIGINS` | Variable del contenedor · Orígenes del frontend, separados por coma |
 | `MP_ACCESS_TOKEN` | Variable del contenedor · Access token (`TEST-…` en sandbox); sin él no se crean pagos |
+| `CLOUDINARY_URL` | Variable del contenedor · Credencial de Cloudinary para las imágenes del panel |
 | `MP_PUBLIC_KEY` | Variable del contenedor · Public key del Payment Brick (la lee el frontend) |
 | `FRONTEND_URL` | Variable del contenedor · URL pública del frontend (retorno del checkout) |
 | `BACKEND_URL` | Variable del contenedor · URL pública **https** del backend (destino del webhook) |

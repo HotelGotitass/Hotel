@@ -83,6 +83,13 @@
 			<version>3.5.3</version>
 		</dependency>
 
+		<!-- Cloudinary: imagenes subidas desde el panel (el disco de Cloud Run es efimero) -->
+		<dependency>
+			<groupId>com.cloudinary</groupId>
+			<artifactId>cloudinary-http5</artifactId>
+			<version>2.5.0</version>
+		</dependency>
+
 		<!-- PostgreSQL -->
 		<dependency>
 			<groupId>org.postgresql</groupId>

@@ -1,7 +1,9 @@
 package com.hotel.app.controller;
 
+import com.hotel.app.dto.request.BrickPaymentRequest;
 import com.hotel.app.dto.request.ClientReservationRequest;
 import com.hotel.app.dto.request.PaymentPreferenceRequest;
+import com.hotel.app.dto.response.BrickPaymentResponse;
 import com.hotel.app.dto.response.PaymentPreferenceResponse;
 import com.hotel.app.dto.response.ReservationResponse;
 import com.hotel.app.service.InvoiceService;
@@ -71,6 +73,16 @@ public class ClientReservationController {
             @Valid @RequestBody PaymentPreferenceRequest request,
             @AuthenticationPrincipal UserDetailsImpl userDetails) {
         return ResponseEntity.ok(paymentService.createPreference(id, userDetails.getUsername(), request.getOption()));
+    }
+
+    /** Pago con el Payment Brick de Mercado Pago (formulario embebido, inicializado con la Public Key). */
+    @PostMapping("/{id}/payments")
+    @PreAuthorize("hasRole('CLIENT')")
+    public ResponseEntity<BrickPaymentResponse> payWithBrick(
+            @PathVariable Long id,
+            @Valid @RequestBody BrickPaymentRequest request,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        return ResponseEntity.ok(paymentService.payWithBrick(id, userDetails.getUsername(), request.getOption(), request.getFormData()));
     }
 
     @GetMapping("/{id}/invoice/pdf")

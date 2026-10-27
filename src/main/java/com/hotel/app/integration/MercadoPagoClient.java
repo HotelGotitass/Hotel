@@ -11,15 +11,10 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.HexFormat;
 import java.util.Map;
 
 /**
- * Cliente minimo de la API REST de Mercado Pago (Checkout Pro).
+ * Cliente minimo de la API REST de Mercado Pago (Checkout Pro y Payment Brick).
  * Docs: https://www.mercadopago.com.pe/developers/es/reference
  */
 @Component
@@ -31,12 +26,12 @@ public class MercadoPagoClient {
 
     private final RestClient restClient;
     private final String accessToken;
-    private final String webhookSecret;
+    private final String publicKey;
 
     public MercadoPagoClient(@Value("${mercadopago.access-token:}") String accessToken,
-                             @Value("${mercadopago.webhook-secret:}") String webhookSecret) {
+                             @Value("${mercadopago.public-key:}") String publicKey) {
         this.accessToken = accessToken;
-        this.webhookSecret = webhookSecret;
+        this.publicKey = publicKey;
         this.restClient = RestClient.builder()
                 .baseUrl(API_URL)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
@@ -62,6 +57,26 @@ public class MercadoPagoClient {
         }
     }
 
+    /** Crea un pago con el token de tarjeta generado por el Payment Brick (Checkout Bricks). */
+    public Map<String, Object> createPayment(Map<String, Object> body, String idempotencyKey) {
+        ensureConfigured();
+        try {
+            return restClient.post()
+                    .uri("/v1/payments")
+                    .header("X-Idempotency-Key", idempotencyKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(JSON_MAP);
+        } catch (RestClientResponseException e) {
+            log.error("Mercado Pago rechazo el pago: {} {}", e.getStatusCode(), e.getResponseBodyAsString());
+            throw new BusinessException("Mercado Pago no pudo procesar el pago. Revise los datos de la tarjeta e intente nuevamente.");
+        } catch (RestClientException e) {
+            log.error("Error de red con Mercado Pago", e);
+            throw new BusinessException("Mercado Pago no esta disponible en este momento. Intente nuevamente.");
+        }
+    }
+
     /** Consulta el pago en Mercado Pago: es la unica fuente de verdad sobre estado y monto. */
     public Map<String, Object> getPayment(String paymentId) {
         ensureConfigured();
@@ -71,44 +86,9 @@ public class MercadoPagoClient {
                 .body(JSON_MAP);
     }
 
-    public boolean isSignatureCheckEnabled() {
-        return webhookSecret != null && !webhookSecret.isBlank();
-    }
-
-    /**
-     * Valida el header x-signature ("ts=...,v1=...") segun
-     * https://www.mercadopago.com.pe/developers/es/docs/your-integrations/notifications/webhooks
-     */
-    public boolean isValidSignature(String xSignature, String xRequestId, String dataId) {
-        if (xSignature == null || xSignature.isBlank()) {
-            return false;
-        }
-        String ts = null;
-        String v1 = null;
-        for (String part : xSignature.split(",")) {
-            String[] kv = part.trim().split("=", 2);
-            if (kv.length != 2) continue;
-            if ("ts".equals(kv[0])) ts = kv[1];
-            if ("v1".equals(kv[0])) v1 = kv[1];
-        }
-        if (ts == null || v1 == null) {
-            return false;
-        }
-
-        StringBuilder manifest = new StringBuilder();
-        if (dataId != null && !dataId.isBlank()) manifest.append("id:").append(dataId.toLowerCase()).append(';');
-        if (xRequestId != null && !xRequestId.isBlank()) manifest.append("request-id:").append(xRequestId).append(';');
-        manifest.append("ts:").append(ts).append(';');
-
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(webhookSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            String expected = HexFormat.of().formatHex(mac.doFinal(manifest.toString().getBytes(StandardCharsets.UTF_8)));
-            return MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), v1.getBytes(StandardCharsets.UTF_8));
-        } catch (Exception e) {
-            log.error("No se pudo calcular la firma del webhook", e);
-            return false;
-        }
+    /** Public Key para el Payment Brick del frontend; es publica por diseño (solo tokeniza tarjetas). */
+    public String getPublicKey() {
+        return publicKey;
     }
 
     private void ensureConfigured() {

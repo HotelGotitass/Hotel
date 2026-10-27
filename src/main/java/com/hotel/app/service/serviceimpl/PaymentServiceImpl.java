@@ -1,5 +1,6 @@
 package com.hotel.app.service.serviceimpl;
 
+import com.hotel.app.dto.response.BrickPaymentResponse;
 import com.hotel.app.dto.response.PaymentPreferenceResponse;
 import com.hotel.app.exception.BusinessException;
 import com.hotel.app.exception.ResourceNotFoundException;
@@ -68,37 +69,8 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public PaymentPreferenceResponse createPreference(Long reservationId, String clientEmail, PaymentOption option) {
-        Reservation res = reservationRepository.findById(reservationId)
-                .orElseThrow(() -> new ResourceNotFoundException("Reserva no encontrada"));
-
-        if (res.getUser() == null || !res.getUser().getEmail().equals(clientEmail)) {
-            throw new BusinessException("No tiene permiso para pagar esta reserva");
-        }
-
-        BigDecimal paid = getAmountPaid(res.getId());
-        BigDecimal balance = res.getTotalPrice().subtract(paid);
-        BigDecimal amount = switch (res.getStatus()) {
-            case PENDING -> {
-                if (res.getExpiresAt() != null && res.getExpiresAt().isBefore(LocalDateTime.now())) {
-                    throw new BusinessException("El tiempo para pagar esta reserva expiro. Realice una nueva reserva.");
-                }
-                if (option == PaymentOption.DEPOSIT) yield getDepositAmount(res).subtract(paid);
-                if (option == PaymentOption.FULL) yield balance;
-                throw new BusinessException("Para una reserva pendiente elija pagar el anticipo o el total");
-            }
-            case CONFIRMED -> {
-                if (option != PaymentOption.BALANCE) {
-                    throw new BusinessException("La reserva ya esta confirmada; solo puede pagar el saldo pendiente");
-                }
-                yield balance;
-            }
-            default -> throw new BusinessException("La reserva no admite pagos en su estado actual");
-        };
-
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException("La reserva no tiene saldo pendiente");
-        }
-        amount = amount.setScale(2, RoundingMode.HALF_UP);
+        Reservation res = findClientReservation(reservationId, clientEmail);
+        BigDecimal amount = resolveAmount(res, option);
 
         Map<String, Object> body = buildPreferenceBody(res, amount, option, clientEmail);
         Map<String, Object> pref = mercadoPagoClient.createPreference(body, UUID.randomUUID().toString());
@@ -123,17 +95,113 @@ public class PaymentServiceImpl implements PaymentService {
                 .build();
     }
 
-    private Map<String, Object> buildPreferenceBody(Reservation res, BigDecimal amount, PaymentOption option, String clientEmail) {
-        long nights = ChronoUnit.DAYS.between(res.getCheckInDate(), res.getCheckOutDate());
-        String concept = switch (option) {
+    @Override
+    @Transactional
+    public BrickPaymentResponse payWithBrick(Long reservationId, String clientEmail, PaymentOption option, Map<String, Object> formData) {
+        Reservation res = findClientReservation(reservationId, clientEmail);
+        BigDecimal amount = resolveAmount(res, option);
+
+        Object token = formData.get("token");
+        Object paymentMethodId = formData.get("payment_method_id");
+        if (token == null || paymentMethodId == null) {
+            throw new BusinessException("Datos de tarjeta incompletos. Vuelva a ingresarlos.");
+        }
+
+        // Solo se copian los campos del Brick que Mercado Pago necesita; el monto lo fija el backend
+        Map<String, Object> payer = new HashMap<>();
+        payer.put("email", clientEmail);
+        if (formData.get("payer") instanceof Map<?, ?> brickPayer) {
+            if (brickPayer.get("email") != null) payer.put("email", brickPayer.get("email"));
+            if (brickPayer.get("identification") != null) payer.put("identification", brickPayer.get("identification"));
+        }
+        payer.put("first_name", res.getGuest().getFirstName());
+        payer.put("last_name", res.getGuest().getLastName());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("transaction_amount", amount);
+        body.put("token", token);
+        body.put("payment_method_id", paymentMethodId);
+        if (formData.get("issuer_id") != null) body.put("issuer_id", formData.get("issuer_id"));
+        body.put("installments", 1);
+        body.put("payer", payer);
+        body.put("description", paymentConcept(option) + " reserva " + res.getBookingCode() + " - " + res.getRoomCategory().getName());
+        body.put("external_reference", res.getBookingCode());
+        body.put("statement_descriptor", statementDescriptor);
+        body.put("metadata", Map.of("reservation_id", res.getId(), "option", option.name()));
+        // Aprobado o rechazado al instante: la reserva expira en minutos y no puede quedar "en revision"
+        body.put("binary_mode", true);
+        if (backendUrl.startsWith("https://")) {
+            body.put("notification_url", backendUrl + "/api/v1/payments/webhook");
+        }
+
+        Map<String, Object> mpPayment = mercadoPagoClient.createPayment(body, UUID.randomUUID().toString());
+        String paymentId = String.valueOf(mpPayment.get("id"));
+        String status = String.valueOf(mpPayment.get("status"));
+        log.info("Pago Brick MP {} para reserva {} ({} {} {}): {}", paymentId, res.getBookingCode(), option, currency, amount, status);
+
+        // Registrar ya mismo sin esperar el webhook (que en local sin https no llega); es idempotente
+        processPaymentNotification(paymentId);
+
+        return BrickPaymentResponse.builder()
+                .paymentId(paymentId)
+                .status(status)
+                .statusDetail((String) mpPayment.get("status_detail"))
+                .bookingCode(res.getBookingCode())
+                .amount(amount)
+                .build();
+    }
+
+    private Reservation findClientReservation(Long reservationId, String clientEmail) {
+        Reservation res = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Reserva no encontrada"));
+
+        if (res.getUser() == null || !res.getUser().getEmail().equals(clientEmail)) {
+            throw new BusinessException("No tiene permiso para pagar esta reserva");
+        }
+        return res;
+    }
+
+    private BigDecimal resolveAmount(Reservation res, PaymentOption option) {
+        BigDecimal paid = getAmountPaid(res.getId());
+        BigDecimal balance = res.getTotalPrice().subtract(paid);
+        BigDecimal amount = switch (res.getStatus()) {
+            case PENDING -> {
+                if (res.getExpiresAt() != null && res.getExpiresAt().isBefore(LocalDateTime.now())) {
+                    throw new BusinessException("El tiempo para pagar esta reserva expiro. Realice una nueva reserva.");
+                }
+                if (option == PaymentOption.DEPOSIT) yield getDepositAmount(res).subtract(paid);
+                if (option == PaymentOption.FULL) yield balance;
+                throw new BusinessException("Para una reserva pendiente elija pagar el anticipo o el total");
+            }
+            case CONFIRMED -> {
+                if (option != PaymentOption.BALANCE) {
+                    throw new BusinessException("La reserva ya esta confirmada; solo puede pagar el saldo pendiente");
+                }
+                yield balance;
+            }
+            default -> throw new BusinessException("La reserva no admite pagos en su estado actual");
+        };
+
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("La reserva no tiene saldo pendiente");
+        }
+        return amount.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static String paymentConcept(PaymentOption option) {
+        return switch (option) {
             case DEPOSIT -> "Anticipo";
             case FULL -> "Pago total";
             case BALANCE -> "Saldo";
         };
+    }
+
+    private Map<String, Object> buildPreferenceBody(Reservation res, BigDecimal amount, PaymentOption option, String clientEmail) {
+        long nights = ChronoUnit.DAYS.between(res.getCheckInDate(), res.getCheckOutDate());
 
         Map<String, Object> item = new HashMap<>();
         item.put("id", res.getBookingCode());
-        item.put("title", concept + " reserva " + res.getBookingCode() + " - " + res.getRoomCategory().getName() + " (" + nights + " noches)");
+        item.put("title", paymentConcept(option) + " reserva " + res.getBookingCode() + " - " + res.getRoomCategory().getName() + " (" + nights + " noches)");
         item.put("category_id", "travels");
         item.put("quantity", 1);
         item.put("currency_id", currency);

@@ -94,15 +94,13 @@ sequenceDiagram
     C->>FE: Elige anticipo o pago total
     FE->>API: POST /client/reservations
     API-->>FE: Reserva PENDING · expira en 15 min
-    FE->>API: POST /client/reservations/{id}/payment-preference
-    API->>MP: Crea preferencia (referencia = código de reserva)
-    MP-->>FE: init_point
-    C->>MP: Paga en Checkout Pro
-    MP->>API: Webhook con x-signature
-    API->>MP: GET /v1/payments/{id}
+    C->>FE: Ingresa la tarjeta en el Payment Brick
+    FE->>MP: Tokeniza la tarjeta (Public Key)
+    FE->>API: POST /client/reservations/{id}/payments (token)
+    API->>MP: POST /v1/payments (Access Token, referencia = código de reserva)
     Note over API: Registra el pago una sola vez<br/>y confirma si cubre el anticipo
-    MP-->>FE: Retorno a /payment/result
-    FE->>API: Consulta hasta ver CONFIRMED
+    MP-->>API: Webhook (cambios posteriores del pago)
+    FE->>API: /payment/result consulta hasta ver CONFIRMED
 ```
 
 ### Ciclo de vida de una reserva
@@ -268,7 +266,7 @@ Plantilla: [`.env.example`](.env.example). Los `.env` reales están en `.gitigno
 | ● | `MAIL_USERNAME` | Cuenta SMTP (Gmail) <sub>· Correo</sub> |
 | ● | `MAIL_PASSWORD` | Contraseña de aplicación de Gmail <sub>· Correo</sub> |
 | ○ | `MP_ACCESS_TOKEN` | Access token (`TEST-…` en sandbox); sin él no se crean pagos <sub>· Mercado Pago</sub> |
-| ○ | `MP_WEBHOOK_SECRET` | Clave de webhooks; valida `x-signature` <sub>· Mercado Pago</sub> |
+| ○ | `MP_PUBLIC_KEY` | Public key del Payment Brick; se expone en `/api/v1/public/payments/config` <sub>· Mercado Pago</sub> |
 | ● | `FRONTEND_URL` | URL pública del frontend (retorno del checkout) <sub>· Mercado Pago</sub> |
 | ● | `BACKEND_URL` | URL pública **https** del backend (destino del webhook) <sub>· Mercado Pago</sub> |
 | ○ | `BILLING_RUC` | RUC del emisor <sub>· Comprobantes</sub> |
@@ -568,7 +566,7 @@ nunca se escriben en el código ni en los logs.
 | `JWT_EXPIRATION` | Variable del contenedor · Vigencia del token (ms) |
 | `CORS_ALLOWED_ORIGINS` | Variable del contenedor · Orígenes del frontend, separados por coma |
 | `MP_ACCESS_TOKEN` | Variable del contenedor · Access token (`TEST-…` en sandbox); sin él no se crean pagos |
-| `MP_WEBHOOK_SECRET` | Variable del contenedor · Clave de webhooks; valida `x-signature` |
+| `MP_PUBLIC_KEY` | Variable del contenedor · Public key del Payment Brick (la lee el frontend) |
 | `FRONTEND_URL` | Variable del contenedor · URL pública del frontend (retorno del checkout) |
 | `BACKEND_URL` | Variable del contenedor · URL pública **https** del backend (destino del webhook) |
 | `MAIL_USERNAME` | Variable del contenedor · Cuenta SMTP (Gmail) |

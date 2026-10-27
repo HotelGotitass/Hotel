@@ -1,6 +1,5 @@
 package com.hotel.app.controller;
 
-import com.hotel.app.integration.MercadoPagoClient;
 import com.hotel.app.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,12 +20,9 @@ import java.util.Map;
 public class WebhookPaymentController {
 
     private final PaymentService paymentService;
-    private final MercadoPagoClient mercadoPagoClient;
 
     @PostMapping("/webhook")
     public ResponseEntity<Void> handleWebhook(
-            @RequestHeader(value = "x-signature", required = false) String signature,
-            @RequestHeader(value = "x-request-id", required = false) String requestId,
             @RequestParam(value = "data.id", required = false) String dataIdParam,
             @RequestParam(value = "type", required = false) String typeParam,
             @RequestBody(required = false) Map<String, Object> body) {
@@ -40,12 +36,6 @@ public class WebhookPaymentController {
         if (!"payment".equals(type) || dataId == null) {
             // merchant_order, pruebas de configuracion, etc.: confirmar recepcion y no hacer nada
             return ResponseEntity.ok().build();
-        }
-
-        if (mercadoPagoClient.isSignatureCheckEnabled()
-                && !mercadoPagoClient.isValidSignature(signature, requestId, dataId)) {
-            log.warn("Webhook MP con firma invalida para data.id={}", dataId);
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
         try {
